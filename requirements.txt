@@ -1,0 +1,25 @@
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27
+sqlalchemy>=2.0,<3.0
+pydantic>=2.5,<3.0
+pyjwt>=2.8,<3.0
+cryptography>=42.0,<50.0
+# Not: Fernet API'si (encrypt/decrypt) uzun süredir stabil, geniş bir
+# aralık verilebilir — sqlglot'taki gibi versiyona duyarlı bir ayrıştırma
+# mantığı yok burada. Test edilen sürüm: 49.0.0.
+sqlglot==25.34.1
+# ÖNEMLİ: sqlglot sürümü kasıtlı olarak SABİTLENDİ (aralık değil). Bu kütüphane
+# hesaplanmış alan formüllerinin güvenlik whitelist'inin temelini oluşturuyor
+# (bkz. app/services/expression_builder.py) — 25.x ile 30.x arasında AST
+# ayrıştırma davranışında (örn. "a; DROP TABLE x" gibi noktalı virgüllü
+# girdilerin ele alınışında) gerçek farklar tespit edildi. Sürümü
+# yükseltmeden önce expression_builder.py'nin güvenlik testlerini MUTLAKA
+# yeniden çalıştırın.
+
+# Aşağıdakiler LAZY driver'lardır — kurulu olmasalar da sistem sqlite ile
+# çalışır. Bir kullanıcı postgresql/mysql/mssql bağlantısı eklemeye çalışırsa
+# ConnectorRegistry.driver_installed() False döner ve /api/drivers/{db_type}/install
+# ile isteğe bağlı kurulur. İsterseniz burada da kurulu tutabilirsiniz:
+# psycopg2-binary>=2.9
+# PyMySQL>=1.1
+# pyodbc>=5.1

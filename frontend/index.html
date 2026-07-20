@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SuperBI</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/6.0.0/echarts.min.js"></script>
+</head>
+<body>
+  <div id="toast-root"></div>
+
+  <!-- Giriş / Kayıt ekranı -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-card">
+      <h1>SuperBI</h1>
+      <p class="muted">Dynamic BI Reporting</p>
+
+      <div class="tabs">
+        <button id="tab-login" class="tab active">Giriş Yap</button>
+        <button id="tab-register" class="tab">Kayıt Ol</button>
+      </div>
+
+      <form id="auth-form">
+        <label>Kullanıcı adı</label>
+        <input id="auth-username" type="text" autocomplete="username" required minlength="3" />
+
+        <label>Şifre</label>
+        <input id="auth-password" type="password" autocomplete="current-password" required minlength="8" />
+
+        <button type="submit" class="btn btn-primary btn-block">Giriş Yap</button>
+        <div id="auth-error" class="error-text"></div>
+      </form>
+      <p class="muted small" id="register-hint" style="display:none">
+        İlk kayıt olan kullanıcı otomatik olarak <b>admin</b> yetkisiyle açılır.
+      </p>
+    </div>
+  </div>
+
+  <!-- Ana uygulama -->
+  <div id="app-shell" class="app-shell" style="display:none">
+    <header class="topbar">
+      <div class="brand">SuperBI</div>
+      <nav class="nav">
+        <button class="nav-btn active" data-view="connections">Bağlantılar</button>
+        <button class="nav-btn" data-view="query">Sorgu Oluşturucu</button>
+        <button class="nav-btn" data-view="history">Geçmiş</button>
+        <button class="nav-btn" data-view="dashboards">Dashboard'lar</button>
+        <button class="nav-btn" data-view="drivers">Sürücüler</button>
+      </nav>
+      <div class="user-box">
+        <span id="user-label" class="muted small"></span>
+        <button id="theme-toggle-btn" class="btn btn-ghost btn-sm" title="Tema değiştir">🌙</button>
+        <button id="logout-btn" class="btn btn-ghost btn-sm">Çıkış</button>
+      </div>
+    </header>
+
+    <main id="view-root" class="view-root"></main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
