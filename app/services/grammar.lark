@@ -1,0 +1,61 @@
+// SuperBI Expression Language (SBX) - Kademe 1 Grammar
+// Excel/DAX-benzeri sözdizimi, SQL'e derlenir.
+// Alan referansı: [Alan Adı]  |  Fonksiyon: AD(arg1, arg2, ...)
+
+?start: expr
+
+?expr: or_expr
+
+?or_expr: and_expr
+        | or_expr "OR"i and_expr    -> or_
+
+?and_expr: not_expr
+         | and_expr "AND"i not_expr -> and_
+
+?not_expr: comparison
+         | "NOT"i not_expr          -> not_
+
+?comparison: sum
+           | sum "="  sum           -> eq
+           | sum "<>" sum           -> neq
+           | sum ">"  sum           -> gt
+           | sum ">=" sum           -> gte
+           | sum "<"  sum           -> lt
+           | sum "<=" sum           -> lte
+
+?sum: product
+    | sum "+" product   -> add
+    | sum "-" product   -> sub
+    | sum "&" product    -> concat   // metin birleştirme
+
+?product: unary
+        | product "*" unary -> mul
+        | product "/" unary -> div
+
+?unary: "-" unary        -> neg
+      | atom
+
+?atom: NUMBER             -> number
+     | STRING             -> string
+     | "TRUE"i             -> true_
+     | "FALSE"i            -> false_
+     | "NULL"i             -> null_
+     | field
+     | func_call
+     | "(" expr ")"
+
+field: "[" FIELD_NAME "]"
+
+func_call: NAME "(" [arglist] ")"
+arglist: expr ("," expr)*
+
+// Köşeli parantez içi alan adı: harf/rakam/boşluk/alt çizgi/Türkçe karakter.
+// Tırnak, virgül, parantez gibi ifade sözdizimi karakterlerini KASITLI dışlar
+// (aksi halde LALR lexer bunu STRING ile karıştırıp dışarı taşırıyor).
+FIELD_NAME: /[A-Za-z0-9_ÇĞİÖŞÜçğıöşü.%]+/
+NAME: /[A-Za-z_][A-Za-z0-9_]*/
+STRING: /'([^'\\]|\\.)*'/
+
+%import common.NUMBER
+%import common.WS
+%ignore WS

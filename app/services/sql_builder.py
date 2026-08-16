@@ -123,6 +123,9 @@ class SQLBuilder:
         db_type:    str = "sqlite",
     ) -> tuple[str, dict[str, Any]]:
 
+        if db_type == "oracle":
+            base_table = base_table.upper()
+            fields = {k.upper(): v for k, v in fields.items()}
         select_cols = self._select_columns(base_table, fields)
         select_cols += self._calculated_columns(fields, calculated_fields or [], db_type)
 
@@ -142,9 +145,15 @@ class SQLBuilder:
         for clause in (join_sql, where_sql, group_sql, order_sql):
             if clause:
                 parts.append(clause)
-        limit_clause = f"LIMIT {int(limit)}"
-        if int(offset) > 0:
-            limit_clause += f" OFFSET {int(offset)}"
+        if db_type == "oracle":
+            if int(offset) > 0:
+                limit_clause = f"OFFSET {int(offset)} ROWS FETCH NEXT {int(limit)} ROWS ONLY"
+            else:
+                limit_clause = f"FETCH FIRST {int(limit)} ROWS ONLY"
+        else:
+            limit_clause = f"LIMIT {int(limit)}"
+            if int(offset) > 0:
+                limit_clause += f" OFFSET {int(offset)}"
         parts.append(limit_clause)
 
         return "\n".join(parts), params

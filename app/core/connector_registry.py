@@ -64,6 +64,7 @@ DRIVER_MAP: dict[str, dict[str, str]] = {
     "postgresql": {"module": "psycopg2",  "package": "psycopg2-binary", "dialect": "postgresql+psycopg2"},
     "mysql":      {"module": "pymysql",   "package": "PyMySQL",         "dialect": "mysql+pymysql"},
     "mssql":      {"module": "pyodbc",    "package": "pyodbc",          "dialect": "mssql+pyodbc"},
+    "oracle":     {"module": "oracledb",  "package": "oracledb",        "dialect": "oracle+oracledb"},
 }
 
 
@@ -163,6 +164,14 @@ class ConnectorRegistry:
         from urllib.parse import quote_plus
         auth = f"{quote_plus(user)}:{quote_plus(password)}@" if user else ""
         port_part = f":{port}" if port else ""
+        if db_type == "oracle":
+            import oracledb
+            from urllib.parse import quote_plus as qp
+            return f"oracle+oracledb://{auth}{host}{port_part}/?service_name={database}"
+        if db_type == "mssql":
+            from urllib.parse import quote_plus as qp
+            driver = qp("ODBC Driver 18 for SQL Server")
+            return f"{dialect}://{auth}{host}{port_part}/{database}?driver={driver}&TrustServerCertificate=yes"
         return f"{dialect}://{auth}{host}{port_part}/{database}"
 
     def remove_engine(self, conn_id: str) -> None:
@@ -189,7 +198,10 @@ class ConnectorRegistry:
     def test_connection(self, engine: Engine) -> tuple[bool, str]:
         try:
             with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
+                try:
+                    conn.execute(text("SELECT 1"))
+                except Exception:
+                    conn.execute(text("SELECT 1 FROM DUAL"))
             return True, "Bağlantı başarılı"
         except Exception as e:
             return False, str(e)
