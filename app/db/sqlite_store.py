@@ -103,6 +103,35 @@ CREATE TABLE IF NOT EXISTS datasets (
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Tablo profilleri: grain tespiti + sütun sınıflandırma sonuçları
+CREATE TABLE IF NOT EXISTS table_profiles (
+    profile_id    TEXT PRIMARY KEY,
+    conn_id       TEXT NOT NULL,
+    table_name    TEXT NOT NULL,
+    row_count     INTEGER,
+    grain_columns TEXT NOT NULL DEFAULT '[]',
+    columns_json  TEXT NOT NULL DEFAULT '[]',
+    analyzed_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(conn_id, table_name)
+);
+-- Tablolar arası ilişki adayları: PK/FK metadata (verified=1) veya
+-- istatistiksel orphan testi (verified=0, confidence skoru ile) sonucu
+CREATE TABLE IF NOT EXISTS datasets_relationships (
+    rel_id        TEXT PRIMARY KEY,
+    conn_id       TEXT NOT NULL,
+    table_a       TEXT NOT NULL,
+    column_a      TEXT NOT NULL,
+    table_b       TEXT NOT NULL,
+    column_b      TEXT NOT NULL,
+    cardinality   TEXT NOT NULL DEFAULT 'unknown',
+    source        TEXT NOT NULL DEFAULT 'inferred',
+    orphan_count  INTEGER,
+    orphan_ratio  REAL,
+    confidence    REAL NOT NULL DEFAULT 0,
+    verified      INTEGER NOT NULL DEFAULT 0,
+    analyzed_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(conn_id, table_a, column_a, table_b, column_b)
+);
 -- Sorgu geçmişinde hızlı gruplama için index
 CREATE INDEX IF NOT EXISTS idx_qh_fingerprint ON query_history(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_qh_conn_id     ON query_history(conn_id);

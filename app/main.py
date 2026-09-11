@@ -98,7 +98,7 @@ async def generic_handler(request: Request, exc: Exception):
 
 # ── Router'lar ──────────────────────────────────────────────────────
 
-from app.api import auth, connections, drivers, schema, query, dashboard, history, datasets  # noqa: E402
+from app.api import auth, connections, drivers, schema, query, dashboard, history, datasets, analyze  # noqa: E402
 
 app.include_router(auth.router,        prefix="/api/auth",       tags=["auth"])
 app.include_router(drivers.router,     prefix="/api/drivers",    tags=["drivers"])
@@ -108,6 +108,7 @@ app.include_router(query.router,       prefix="/api/query",      tags=["query"])
 app.include_router(dashboard.router,   prefix="/api/dashboards", tags=["dashboards"])
 app.include_router(history.router,     prefix="/api/history",    tags=["history"])
 app.include_router(datasets.router,    prefix="/api/datasets",   tags=["datasets"])
+app.include_router(analyze.router,     prefix="/api/analyze",    tags=["analyze"])
 
 
 @app.get("/api/health", tags=["health"])

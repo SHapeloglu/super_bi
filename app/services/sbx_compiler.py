@@ -6,6 +6,19 @@ Kullanım:
     sql_text = compile_sbx("IF([Kar] > 0, 'Pozitif', 'Negatif')", dialect="oracle")
 
 Bağımlılıklar: lark, sqlglot==25.34.1 (proje ile aynı pin)
+
+Değişiklik notu (2026-08-27):
+    _p() yardımcı fonksiyonu eklendi. sqlglot elle inşa edilen (parse
+    edilmemiş, doğrudan Python'da kurulan) expression ağaçlarında
+    operatör önceliğini otomatik korumuyor. Örn. eskiden
+    DIVIDE([tutar]-[maliyet], [tutar], 0) ifadesi parantezsiz
+    "tutar - maliyet / tutar" olarak render ediliyordu ki bu SQL'de
+    "tutar - (maliyet / tutar)" anlamına gelir -- istenen
+    "(tutar - maliyet) / tutar" DEĞİL. Sessiz, yanlış sonuç.
+    Artık tüm ikili/tekli operatör kurucuları alt ifadeleri _p() ile
+    açıkça parantezliyor. Fazladan parantez SQL açısından zararsız;
+    eksik parantez ise yanlış sonuç demek -- bu yüzden her yerde
+    tutarlı şekilde uygulandı.
 """
 from __future__ import annotations
 
@@ -15,11 +28,21 @@ import sqlglot
 from sqlglot import exp
 
 GRAMMAR_PATH = os.path.join(os.path.dirname(__file__), "grammar.lark")
-
 with open(GRAMMAR_PATH, "r", encoding="utf-8") as f:
     _GRAMMAR = f.read()
 
 _parser = Lark(_GRAMMAR, start="start", parser="lalr")
+
+
+def _p(expr):
+    """Bileşik (binary/unary/mantıksal) alt ifadeleri açıkça parantezle
+    sarar, böylece render sırasında operatör önceliği hiçbir zaman
+    belirsiz kalmaz. Zaten parantezli bir ifadeyi tekrar sarmaz."""
+    if isinstance(expr, exp.Paren):
+        return expr
+    if isinstance(expr, (exp.Binary, exp.Connector, exp.Unary, exp.Not)):
+        return exp.Paren(this=expr)
+    return expr
 
 
 # ---------------------------------------------------------------------------
@@ -28,12 +51,12 @@ _parser = Lark(_GRAMMAR, start="start", parser="lalr")
 # ---------------------------------------------------------------------------
 def _f_if(args):
     cond, then, else_ = args
-    return exp.Case(ifs=[exp.If(this=cond, true=then)], default=else_)
+    return exp.Case(ifs=[exp.If(this=_p(cond), true=then)], default=else_)
 
 
 def _f_divide(args):
     # DAX'taki DIVIDE gibi: sıfıra bölmeyi güvenli hale getirir
-    num, den = args[0], args[1]
+    num, den = _p(args[0]), _p(args[1])
     fallback = args[2] if len(args) > 2 else exp.Null()
     safe_div = exp.Div(this=num, expression=den)
     zero_check = exp.EQ(this=den, expression=exp.Literal.number(0))
@@ -89,7 +112,7 @@ FUNCTIONS = {
 
 
 class SBXError(Exception):
-    """SBX ayrıştı¯ma/derleme hatası - kullanīĹcĹya gösterilecek mesaj."""
+    """SBX ayrıştırma/derleme hatası - kullanıcıya gösterilecek mesaj."""
 
 
 @v_args(inline=True)
@@ -123,55 +146,58 @@ class SBXTransformer(Transformer):
         try:
             return FUNCTIONS[fn_name](list(args))
         except (IndexError, KeyError) as e:
-            raise SBXError(f"{fn_name} fonksiyonu argôman hatası: {e}")
+            raise SBXError(f"{fn_name} fonksiyonu argüman hatası: {e}")
 
     def arglist(self, *items):
         return items  # func_call bunu .children ile okuyor, bkz. yukarı
 
+    # -- Aritmetik operatörler: alt ifadeler _p() ile parantezlenir --
     def add(self, l, r):
-        return exp.Add(this=l, expression=r)
+        return exp.Add(this=_p(l), expression=_p(r))
 
     def sub(self, l, r):
-        return exp.Sub(this=l, expression=r)
+        return exp.Sub(this=_p(l), expression=_p(r))
 
     def mul(self, l, r):
-        return exp.Mul(this=l, expression=r)
+        return exp.Mul(this=_p(l), expression=_p(r))
 
     def div(self, l, r):
-        return exp.Div(this=l, expression=r)
+        return exp.Div(this=_p(l), expression=_p(r))
 
     def concat(self, l, r):
-        return exp.Concat(expressions=[l, r])
+        return exp.Concat(expressions=[_p(l), _p(r)])
 
     def neg(self, x):
-        return exp.Neg(this=x)
+        return exp.Neg(this=_p(x))
 
+    # -- Karşılaştırma operatörleri --
     def eq(self, l, r):
-        return exp.EQ(this=l, expression=r)
+        return exp.EQ(this=_p(l), expression=_p(r))
 
     def neq(self, l, r):
-        return exp.NEQ(this=l, expression=r)
+        return exp.NEQ(this=_p(l), expression=_p(r))
 
     def gt(self, l, r):
-        return exp.GT(this=l, expression=r)
+        return exp.GT(this=_p(l), expression=_p(r))
 
     def gte(self, l, r):
-        return exp.GTE(this=l, expression=r)
+        return exp.GTE(this=_p(l), expression=_p(r))
 
     def lt(self, l, r):
-        return exp.LT(this=l, expression=r)
+        return exp.LT(this=_p(l), expression=_p(r))
 
     def lte(self, l, r):
-        return exp.LTE(this=l, expression=r)
+        return exp.LTE(this=_p(l), expression=_p(r))
 
+    # -- Mantıksal operatörler --
     def and_(self, l, r):
-        return exp.And(this=l, expression=r)
+        return exp.And(this=_p(l), expression=_p(r))
 
     def or_(self, l, r):
-        return exp.Or(this=l, expression=r)
+        return exp.Or(this=_p(l), expression=_p(r))
 
     def not_(self, x):
-        return exp.Not(this=x)
+        return exp.Not(this=_p(x))
 
 
 def compile_sbx(expression_text: str, dialect: str = "oracle") -> str:
@@ -184,7 +210,6 @@ def compile_sbx(expression_text: str, dialect: str = "oracle") -> str:
         tree = _parser.parse(expression_text)
     except Exception as e:
         raise SBXError(f"Sözdizimi hatası: {e}")
-
     sql_exp = SBXTransformer().transform(tree)
     return sql_exp.sql(dialect=dialect)
 
@@ -195,8 +220,9 @@ if __name__ == "__main__":
         "[Satış] - [Maliyet]",
         "IF([Kar] > 0, 'Pozitif', 'Negatif')",
         "DIVIDE([Kar], [Satış], 0)",
+        "DIVIDE([tutar] - [maliyet], [tutar], 0)",
         "ROUND([Fiyat] * 1.20, 2)",
-        "[Ad] & ' &  [Soyad]",
+        "[Ad] & ' ' & [Soyad]",
         "SUM([Satış])",
         "DATEDIFF('day', [BaslangicTarihi], [BitisTarihi])",
         "ISNULL([Bölge], 'Bilinmiyor')",
