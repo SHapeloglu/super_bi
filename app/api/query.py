@@ -52,7 +52,8 @@ def preview_sql(body: SQLPreviewRequest):
             order_by=body.order_by,
             limit=body.limit,
             calculated_fields=body.calculated_fields,
-            db_type="sqlite",
+            db_type=body.db_type or "sqlite",
+            schema=body.schema_name,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -97,6 +98,7 @@ def run_query(
             offset=0,
             calculated_fields=body.calculated_fields,
             db_type=meta.db_type,
+            schema=body.schema_name,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -158,6 +160,7 @@ async def stream_query(
             offset=body.offset,
             calculated_fields=body.calculated_fields,
             db_type=meta.db_type,
+            schema=body.schema_name,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

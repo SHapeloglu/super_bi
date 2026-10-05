@@ -55,11 +55,18 @@ export function createApiClient(baseUrl, getToken) {
     deleteConnection: (connId) => request("DELETE", `/api/connections/${connId}`),
 
     // ---- schema ----
-    listTables: (connId) => request("GET", `/api/schema/${connId}/tables`),
-    listColumns: (connId, table) =>
-      request("GET", `/api/schema/${connId}/tables/${encodeURIComponent(table)}/columns`),
-    listForeignKeys: (connId, table) =>
-      request("GET", `/api/schema/${connId}/tables/${encodeURIComponent(table)}/foreign-keys`),
+    listSchemas: (connId) => request("GET", `/api/schema/${connId}/schemas`),
+    listTables: (connId, schema) =>
+      request("GET", `/api/schema/${connId}/tables${schema ? `?schema=${encodeURIComponent(schema)}` : ""}`),
+    listColumns: (connId, table, schema) =>
+      request("GET", `/api/schema/${connId}/tables/${encodeURIComponent(table)}/columns${schema ? `?schema=${encodeURIComponent(schema)}` : ""}`),
+    listForeignKeys: (connId, table, schema) =>
+      request("GET", `/api/schema/${connId}/tables/${encodeURIComponent(table)}/foreign-keys${schema ? `?schema=${encodeURIComponent(schema)}` : ""}`),
+
+    // ---- analyze (granularity + ilişki keşfi) ----
+    analyzeTables: (connId, body) => request("POST", `/api/analyze/${connId}/tables`, body || {}),
+    testRelationship: (connId, body) => request("POST", `/api/analyze/${connId}/relationship`, body),
+    getAnalysisResults: (connId) => request("GET", `/api/analyze/${connId}/results`),
 
     // ---- drivers ----
     listDrivers: () => request("GET", "/api/drivers"),

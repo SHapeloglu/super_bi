@@ -35,18 +35,23 @@ class SQLBuilder:
         fields: dict[str, str],
         calculated_fields: list[CalculatedFieldDef],
         db_type: str,
+        formula_only_columns: list[str] | None = None,
     ) -> list[str]:
         """
         Her hesaplanmış alan için formülü doğrulayıp (whitelist) hedef
         dialect'e derler, sonra "AS alias" ekleyerek SELECT listesine
         eklenecek parçayı üretir.
 
-        allowed_columns SADECE seçili (role != "off") fields'daki bare kolon
-        adlarıdır — yani kullanıcı önce query builder'da bir kolonu "dahil"
-        etmeden, o kolonu bir formülde kullanamaz. Bu bilinçli bir kısıtlama:
-        SQLBuilder'ın tam şema bilgisi yok, sadece frontend'den gelen
-        fields dict'ini biliyor; formülleri buna göre sınırlamak, şema
-        dışı/rastgele kolon adı denemelerini baştan eler.
+        allowed_columns iki kaynaktan gelir:
+          1) Seçili (role != "off") fields'daki bare kolon adları — yani
+             kullanıcı önce query builder'da bir kolonu "dahil" etmeden,
+             o kolonu bir formülde kullanamaz (mevcut davranış, değişmedi).
+          2) formula_only_columns — SADECE agregasyon/formül içinde
+             kullanılacak, ham SELECT kolonu olarak EKLENMEYECEK kolonlar.
+             Örn. "5 en çok satan ürün" sorgusunda LineTotal, SUM() içinde
+             gerekli ama tek başına bir SELECT kolonu olarak (GROUP BY'a
+             sokulmadığı için) sorguyu bozar — formula_only_columns bu
+             kolonu whitelist'e ekler ama _select_columns hiç görmez.
         """
         if not calculated_fields:
             return []
@@ -54,6 +59,8 @@ class SQLBuilder:
         allowed_columns = {
             (key.split(".")[-1]) for key, role in fields.items() if role != "off"
         }
+        if formula_only_columns:
+            allowed_columns |= set(formula_only_columns)
 
         parts = []
         for cf in calculated_fields:
@@ -121,16 +128,28 @@ class SQLBuilder:
         offset:     int = 0,
         calculated_fields: list[CalculatedFieldDef] | None = None,
         db_type:    str = "sqlite",
+        schema:     str | None = None,
+        formula_only_columns: list[str] | None = None,
     ) -> tuple[str, dict[str, Any]]:
 
         if db_type == "oracle":
             base_table = base_table.upper()
             fields = {k.upper(): v for k, v in fields.items()}
+            if schema:
+                schema = schema.upper()
         select_cols = self._select_columns(base_table, fields)
-        select_cols += self._calculated_columns(fields, calculated_fields or [], db_type)
+        select_cols += self._calculated_columns(
+            fields, calculated_fields or [], db_type, formula_only_columns
+        )
 
-        select_sql = "SELECT\n  " + ",\n  ".join(select_cols)
-        from_sql   = f"FROM {quote_identifier(base_table)}"
+        # T-SQL'de LIMIT yok; offset=0 ise "SELECT TOP n" ile en başta uygulanır
+        select_prefix = "SELECT"
+        if db_type == "mssql" and int(offset) == 0:
+            select_prefix = f"SELECT TOP {int(limit)}"
+
+        select_sql = select_prefix + "\n  " + ",\n  ".join(select_cols)
+        qualified_table = f"{schema}.{base_table}" if schema else base_table
+        from_sql   = f"FROM {quote_identifier(qualified_table)}"
         join_sql   = self._join_clauses(joins)
         where_sql, params = self._where_clauses(filters)
 
@@ -145,16 +164,25 @@ class SQLBuilder:
         for clause in (join_sql, where_sql, group_sql, order_sql):
             if clause:
                 parts.append(clause)
+
         if db_type == "oracle":
             if int(offset) > 0:
                 limit_clause = f"OFFSET {int(offset)} ROWS FETCH NEXT {int(limit)} ROWS ONLY"
             else:
                 limit_clause = f"FETCH FIRST {int(limit)} ROWS ONLY"
+            parts.append(limit_clause)
+        elif db_type == "mssql":
+            if int(offset) > 0:
+                # T-SQL'de OFFSET/FETCH mutlaka bir ORDER BY gerektirir
+                if not order_sql:
+                    parts.append("ORDER BY (SELECT NULL)")
+                parts.append(f"OFFSET {int(offset)} ROWS FETCH NEXT {int(limit)} ROWS ONLY")
+            # offset == 0 durumunda TOP zaten SELECT'e eklendi, ayrı limit_clause gerekmiyor
         else:
             limit_clause = f"LIMIT {int(limit)}"
             if int(offset) > 0:
                 limit_clause += f" OFFSET {int(offset)}"
-        parts.append(limit_clause)
+            parts.append(limit_clause)
 
         return "\n".join(parts), params
 

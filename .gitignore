@@ -6,3 +6,9 @@ backups/
 *.db
 *.db.gz
 odoo_test
+
+# backups / archives
+*.bak
+*.bak[0-9]*
+*.bak_*
+*.zip

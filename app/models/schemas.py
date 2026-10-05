@@ -121,12 +121,28 @@ class _QueryShapeBase(BaseModel):
     """QueryRequest ve QueryRunRequest'in ortak SELECT/JOIN/WHERE gövdesi."""
     conn_id:    str
     base_table: str
+    schema_name: str | None = None  # çok şemalı DB'lerde (MSSQL/Postgres) hedef şema
     fields:     dict[str, str]        = Field(default_factory=dict)  # {kolon: rol} rol="off" hariç seçilir
     joins:      list[JoinDef]         = Field(default_factory=list)
     filters:    list[FilterDef]       = Field(default_factory=list)
     group_by:   list[str]             = Field(default_factory=list)
     order_by:   list[str]             = Field(default_factory=list)
     calculated_fields: list[CalculatedFieldDef] = Field(default_factory=list)
+    formula_only_columns: list[str]   = Field(default_factory=list)
+    # formula_only_columns: SADECE calculated_fields formüllerinde (örn.
+    # SUM(...) içinde) kullanılabilecek, ham SELECT kolonu olarak EKLENMEYECEK
+    # kolon adları. NLQ katmanı ve agregasyon içeren sorgular için gerekli —
+    # aksi halde agregasyona giren bir kolonu formülde kullanabilmek icin onu
+    # fields'a "off" olmayan bir rolle eklemek gerekir, bu da onu GROUP BY'a
+    # sokulmamış ham bir SELECT kolonu yapar ve sorguyu bozar.
+
+    @field_validator("formula_only_columns")
+    @classmethod
+    def _formula_only_columns_whitelist(cls, v: list[str]) -> list[str]:
+        for col in v:
+            if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", col):
+                raise ValueError(f"Geçersiz kolon adı: {col!r}")
+        return v
 
 
 class QueryRequest(_QueryShapeBase):
@@ -161,6 +177,7 @@ class QueryResult(BaseModel):
 
 class SQLPreviewRequest(_QueryShapeBase):
     limit: int = Field(default=100, ge=1, le=100_000)
+    db_type: str | None = None  # sadece önizleme SQL metnini doğru dialect'te göstermek için (auth/veri erişimi yok)
 
 
 class SQLPreviewResponse(BaseModel):

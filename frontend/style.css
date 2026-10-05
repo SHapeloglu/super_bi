@@ -177,6 +177,20 @@ pre.sql-preview {
 .dash-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .dash-body { display: flex; gap: 16px; }
 .widget-palette { width: 160px; flex-shrink: 0; }
+
+.template-picker { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border, #e2e2e2); }
+.template-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.template-card {
+  width: 160px;
+  padding: 10px;
+  border: 1px solid var(--border, #d8d8d8);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.template-card:hover { border-color: var(--accent); }
+.template-card-title { font-weight: 600; margin-bottom: 4px; }
+.template-card-desc { line-height: 1.3; }
 .palette-item {
   padding: 10px; margin-bottom: 8px; background: var(--panel-2); border: 1px dashed var(--border);
   border-radius: 8px; cursor: grab; text-align: center; font-size: 13px;

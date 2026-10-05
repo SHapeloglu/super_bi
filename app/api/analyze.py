@@ -40,6 +40,15 @@ from app.services import granularity_analyzer as ga
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# all_schemas=True iken taranmayacak sistem şemaları (MSSQL fixed database
+# role'ları + information_schema, Postgres pg_catalog/pg_toast, vb.)
+_SYSTEM_SCHEMAS = {
+    "sys", "information_schema", "guest",
+    "db_accessadmin", "db_backupoperator", "db_datareader", "db_datawriter",
+    "db_ddladmin", "db_denydatareader", "db_denydatawriter", "db_owner",
+    "db_securityadmin", "pg_catalog", "pg_toast",
+}
+
 
 # ---------------------------------------------------------------------------
 # Pydantic modelleri
@@ -48,6 +57,7 @@ router = APIRouter()
 class AnalyzeTablesRequest(BaseModel):
     schema_name: Optional[str] = None
     tables: Optional[list[str]] = None  # None = tüm tablolar
+    all_schemas: bool = False  # True ise sistem şemaları hariç TÜM şemalar taranır
 
 
 class RelationshipTestRequest(BaseModel):
@@ -140,62 +150,90 @@ def analyze_tables(
     """
     Bağlantıdaki tabloları analiz eder; grain, sütun sınıflandırma ve
     FK ilişkilerini bulur, sonuçları SQLite metadata DB'ye kaydeder.
+
+    all_schemas=True ise veritabanındaki TÜM kullanıcı şemaları taranır
+    (sistem şemaları _SYSTEM_SCHEMAS ile hariç tutulur) — çok şemalı
+    DB'lerde (MSSQL vb.) her şema için ayrı istek atmak gerekmez.
     """
     engine, _ = resolve_connection_engine(conn_id, current, registry, repo)
 
     from sqlalchemy import inspect as sa_inspect
     insp = sa_inspect(engine)
 
-    schema = body.schema_name
-    try:
-        all_tables = insp.get_table_names(schema=schema)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Tablo listesi alınamadı: {e}")
-
-    # İstenen tablo listesi verilmişse filtrele
-    target_tables = body.tables if body.tables else all_tables
-    target_tables = [t for t in target_tables if t in all_tables]
-
-    # Tam nitelikli tablo adı (sorgu için)
-    def full_name(table: str) -> str:
-        return f"{schema}.{table}" if schema else table
-
-    profiled = []
-    errors = []
-
-    # 1) Tablo profilleri
-    for table in target_tables:
+    def run_for_schema(schema: Optional[str]) -> dict:
         try:
-            profile = ga.profile_table(engine, full_name(table))
-            _save_profile(store, conn_id, profile)
-            profiled.append(profile.to_dict())
-            logger.info("Profil kaydedildi: %s.%s", conn_id, table)
+            all_tables = insp.get_table_names(schema=schema)
         except Exception as e:
-            logger.warning("Profil hatası (%s): %s", table, e)
-            errors.append({"table": table, "error": str(e)})
+            return {
+                "schema": schema, "tables_found": 0,
+                "profiled": [], "fk_rels": [],
+                "errors": [{"schema": schema, "error": f"Tablo listesi alınamadı: {e}"}],
+            }
 
-    # 2) FK ilişkileri (tüm şema için tek seferde)
-    fk_rels = []
-    try:
-        fk_rels = ga.discover_fk_relationships(engine, schema=schema)
-        for rel in fk_rels:
+        target_tables = body.tables if body.tables else all_tables
+        target_tables = [t for t in target_tables if t in all_tables]
+
+        def full_name(table: str) -> str:
+            return f"{schema}.{table}" if schema else table
+
+        profiled = []
+        errors = []
+
+        # 1) Tablo profilleri
+        for table in target_tables:
             try:
-                _save_relationship(store, conn_id, rel)
+                profile = ga.profile_table(engine, full_name(table))
+                _save_profile(store, conn_id, profile)
+                profiled.append(profile.to_dict())
+                logger.info("Profil kaydedildi: %s.%s", conn_id, full_name(table))
             except Exception as e:
-                logger.warning("İlişki kayıt hatası: %s", e)
-    except Exception as e:
-        logger.warning("FK keşfi hatası: %s", e)
-        errors.append({"fk_discovery": str(e)})
+                logger.warning("Profil hatası (%s): %s", full_name(table), e)
+                errors.append({"table": full_name(table), "error": str(e)})
+
+        # 2) FK ilişkileri (bu şema için)
+        fk_rels = []
+        try:
+            fk_rels = ga.discover_fk_relationships(engine, schema=schema)
+            for rel in fk_rels:
+                try:
+                    _save_relationship(store, conn_id, rel)
+                except Exception as e:
+                    logger.warning("İlişki kayıt hatası: %s", e)
+        except Exception as e:
+            logger.warning("FK keşfi hatası (%s): %s", schema, e)
+            errors.append({"fk_discovery": str(e), "schema": schema})
+
+        return {
+            "schema": schema, "tables_found": len(all_tables),
+            "profiled": profiled, "fk_rels": fk_rels, "errors": errors,
+        }
+
+    if body.all_schemas:
+        try:
+            schema_names = insp.get_schema_names()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Şema listesi alınamadı: {e}")
+        target_schemas = [
+            s for s in schema_names if s and s.lower() not in _SYSTEM_SCHEMAS
+        ]
+        results = [run_for_schema(s) for s in target_schemas]
+    else:
+        results = [run_for_schema(body.schema_name)]
+
+    all_profiled = [p for r in results for p in r["profiled"]]
+    all_fk_rels  = [rel for r in results for rel in r["fk_rels"]]
+    all_errors   = [e for r in results for e in r["errors"]]
+    tables_found_total = sum(r["tables_found"] for r in results)
 
     return {
-        "conn_id":       conn_id,
-        "schema":        schema,
-        "tables_found":  len(all_tables),
-        "tables_profiled": len(profiled),
-        "fk_relationships": len(fk_rels),
-        "errors":        errors,
-        "profiles":      profiled,
-        "relationships": [r.to_dict() for r in fk_rels],
+        "conn_id":          conn_id,
+        "schemas_scanned":  [r["schema"] for r in results],
+        "tables_found":     tables_found_total,
+        "tables_profiled":  len(all_profiled),
+        "fk_relationships": len(all_fk_rels),
+        "errors":           all_errors,
+        "profiles":         all_profiled,
+        "relationships":    [r.to_dict() for r in all_fk_rels],
     }
 
 

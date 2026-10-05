@@ -37,6 +37,7 @@ const state = {
   dashboards: [],
   currentDashboard: null,
   dashZoom: 1,
+  showTemplatePicker: false,
   selectedWidgetId: null,
 
   // Undo/Redo
@@ -335,6 +336,8 @@ function renderConnectionsList(container) {
   const tbody = el("tbody");
   for (const c of state.connections) {
     const testBtn = el("button", { class: "btn btn-sm" }, "Test Et");
+    const analyzeBtn = el("button", { class: "btn btn-sm" }, "Analiz Et");
+    const resultsBtn = el("button", { class: "btn btn-sm" }, "Sonuçlar");
     const delBtn = el("button", { class: "btn btn-sm btn-danger" }, "Sil");
     const statusSpan = el("span", { class: "badge" }, "");
 
@@ -346,6 +349,31 @@ function renderConnectionsList(container) {
           statusSpan.className = `badge ${res.success ? "ok" : "warn"}`;
           if (!res.success) toast(res.message, "error");
         } catch (e) { handleApiError(e, "Test başarısız"); }
+      })
+    );
+
+    analyzeBtn.addEventListener("click", () =>
+      withBusy(analyzeBtn, async () => {
+        try {
+          const res = await api.analyzeTables(c.conn_id, { all_schemas: true });
+          const schemaCount = (res.schemas_scanned || []).length;
+          toast(
+            `Analiz tamam (${schemaCount} şema): ${res.tables_profiled}/${res.tables_found} tablo, ${res.fk_relationships} FK ilişkisi bulundu`,
+            "success"
+          );
+          if (res.errors && res.errors.length) {
+            console.warn("Analiz hataları:", res.errors);
+            toast(`${res.errors.length} tabloda hata oluştu — konsolu kontrol edin`, "error");
+          }
+          await showAnalysisResults(c.conn_id);
+        } catch (e) { handleApiError(e, "Analiz başarısız"); }
+      })
+    );
+
+    resultsBtn.addEventListener("click", () =>
+      withBusy(resultsBtn, async () => {
+        try { await showAnalysisResults(c.conn_id); }
+        catch (e) { handleApiError(e, "Sonuçlar alınamadı"); }
       })
     );
 
@@ -365,11 +393,86 @@ function renderConnectionsList(container) {
       el("td", {}, c.host || "-"),
       el("td", {}, c.database),
       el("td", {}, fmtDate(c.created_at)),
-      el("td", { class: "row" }, [testBtn, statusSpan, delBtn]),
+      el("td", { class: "row" }, [testBtn, statusSpan, analyzeBtn, resultsBtn, delBtn]),
     ]));
   }
   table.appendChild(tbody);
   container.appendChild(table);
+
+  const resultsPanel = el("div", { id: "analysis-results-panel", style: "margin-top:16px" });
+  container.appendChild(resultsPanel);
+}
+
+// Bir bağlantı için kayıtlı granularity/ilişki analiz sonuçlarını
+// #analysis-results-panel içine render eder. /api/analyze GET endpoint'i
+// zaten mevcuttu (backend Faz 4 tamamdı) — burada sadece tüketiliyor.
+async function showAnalysisResults(connId) {
+  const panel = qs("#analysis-results-panel");
+  if (!panel) return;
+  panel.innerHTML = "";
+  panel.appendChild(el("p", { class: "muted small" }, "Yükleniyor…"));
+
+  let data;
+  try {
+    data = await api.getAnalysisResults(connId);
+  } catch (e) {
+    panel.innerHTML = "";
+    handleApiError(e, "Analiz sonuçları alınamadı");
+    return;
+  }
+
+  panel.innerHTML = "";
+
+  if (!data.profiles.length && !data.relationships.length) {
+    panel.appendChild(el("div", { class: "empty-state" },
+      `"${connId}" için henüz analiz sonucu yok — "Analiz Et" ile başlatın.`));
+    return;
+  }
+
+  panel.appendChild(el("h4", {}, `Analiz Sonuçları — ${connId}`));
+
+  if (data.profiles.length) {
+    panel.appendChild(el("h5", {}, "Tablo Profilleri"));
+    const pTable = el("table");
+    pTable.appendChild(el("thead", {}, el("tr", {},
+      ["Tablo", "Satır Sayısı", "Grain", "Sütun Sınıflandırma"].map((h) => el("th", {}, h))
+    )));
+    const pBody = el("tbody");
+    for (const p of data.profiles) {
+      const colSummary = p.columns
+        .map((col) => `${col.name}: ${col.classification}`)
+        .join(", ");
+      pBody.appendChild(el("tr", {}, [
+        el("td", {}, p.table_name),
+        el("td", {}, String(p.row_count ?? "-")),
+        el("td", {}, p.grain_columns.length ? p.grain_columns.join(", ") : "-"),
+        el("td", { class: "muted small" }, colSummary || "-"),
+      ]));
+    }
+    pTable.appendChild(pBody);
+    panel.appendChild(pTable);
+  }
+
+  if (data.relationships.length) {
+    panel.appendChild(el("h5", { style: "margin-top:12px" }, "İlişkiler"));
+    const rTable = el("table");
+    rTable.appendChild(el("thead", {}, el("tr", {},
+      ["A", "B", "Kardinalite", "Kaynak", "Güven", "Doğrulanmış"].map((h) => el("th", {}, h))
+    )));
+    const rBody = el("tbody");
+    for (const r of data.relationships) {
+      rBody.appendChild(el("tr", {}, [
+        el("td", {}, `${r.table_a}.${r.column_a}`),
+        el("td", {}, `${r.table_b}.${r.column_b}`),
+        el("td", {}, r.cardinality),
+        el("td", {}, r.source === "fk_constraint" ? "FK (kesin)" : "İstatistiksel"),
+        el("td", {}, r.confidence != null ? r.confidence.toFixed(2) : "-"),
+        el("td", {}, r.verified ? "✓" : "-"),
+      ]));
+    }
+    rTable.appendChild(rBody);
+    panel.appendChild(rTable);
+  }
 }
 
 /* ============================================================
@@ -422,10 +525,12 @@ async function renderQueryView(root) {
   );
   if (state.selectedConnId) connSel.value = state.selectedConnId;
 
+  const schemaSel = el("select", { id: "qb-schema-select" }, [el("option", { value: "" }, "(varsayılan)")]);
   const tableSel = el("select", { id: "qb-table-select" }, [el("option", { value: "" }, "Tablo seçin…")]);
 
-  topCard.appendChild(el("div", { class: "grid-2" }, [
+  topCard.appendChild(el("div", { class: "grid-3" }, [
     el("div", {}, [el("label", {}, "Bağlantı"), connSel]),
+    el("div", {}, [el("label", {}, "Şema"), schemaSel]),
     el("div", {}, [el("label", {}, "Tablo"), tableSel]),
   ]));
   root.appendChild(topCard);
@@ -438,19 +543,34 @@ async function renderQueryView(root) {
   resultCard.style.display = "none";
   root.appendChild(resultCard);
 
-  async function loadTablesFor(connId) {
+  async function loadSchemasFor(connId) {
+    schemaSel.innerHTML = "";
+    schemaSel.appendChild(el("option", { value: "" }, "(varsayılan)"));
+    try {
+      const res = await api.listSchemas(connId);
+      for (const s of res.schemas || []) schemaSel.appendChild(el("option", { value: s }, s));
+      if (state.selectedSchema && (res.schemas || []).includes(state.selectedSchema)) {
+        schemaSel.value = state.selectedSchema;
+      }
+    } catch (e) {
+      // Bazı DB tipleri (örn. SQLite) şema listesini desteklemeyebilir — sessizce (varsayılan) ile devam et
+    }
+  }
+
+  async function loadTablesFor(connId, schema) {
     state.selectedConnId = connId;
+    state.selectedSchema = schema || null;
     tableSel.innerHTML = "";
     tableSel.appendChild(el("option", { value: "" }, "Yükleniyor…"));
     try {
-      const res = await api.listTables(connId);
+      const res = await api.listTables(connId, schema);
       state.tables = res.tables || [];
       tableSel.innerHTML = "";
       tableSel.appendChild(el("option", { value: "" }, "Tablo seçin…"));
       for (const t of state.tables) tableSel.appendChild(el("option", { value: t }, t));
       if (state.selectedTable && state.tables.includes(state.selectedTable)) {
         tableSel.value = state.selectedTable;
-        await loadColumnsFor(connId, state.selectedTable);
+        await loadColumnsFor(connId, state.selectedTable, schema);
       }
     } catch (e) {
       handleApiError(e, "Tablolar alınamadı");
@@ -459,7 +579,7 @@ async function renderQueryView(root) {
     }
   }
 
-  async function loadColumnsFor(connId, table) {
+  async function loadColumnsFor(connId, table, schema) {
     state.selectedTable = table;
     state.fields = {};
     state.joins = [];
@@ -468,7 +588,7 @@ async function renderQueryView(root) {
     state.orderBy = [];
     state.calculatedFields = [];
     try {
-      const res = await api.listColumns(connId, table);
+      const res = await api.listColumns(connId, table, schema);
       state.columns = res.columns || [];
       for (const c of state.columns) state.fields[c.name] = "dim";
       builderCard.style.display = "block";
@@ -480,21 +600,30 @@ async function renderQueryView(root) {
     resetQueryBuilderState();
     builderCard.style.display = "none";
     resultCard.style.display = "none";
-    loadTablesFor(connSel.value);
+    loadSchemasFor(connSel.value).then(() => loadTablesFor(connSel.value, schemaSel.value));
+  });
+
+  schemaSel.addEventListener("change", () => {
+    resetQueryBuilderState();
+    builderCard.style.display = "none";
+    resultCard.style.display = "none";
+    loadTablesFor(connSel.value, schemaSel.value);
   });
 
   tableSel.addEventListener("change", () => {
     if (!tableSel.value) { builderCard.style.display = "none"; return; }
-    loadColumnsFor(connSel.value, tableSel.value);
+    loadColumnsFor(connSel.value, tableSel.value, schemaSel.value);
   });
 
-  await loadTablesFor(connSel.value);
+  await loadSchemasFor(connSel.value);
+  await loadTablesFor(connSel.value, schemaSel.value);
 }
 
 function buildQueryShape() {
   return {
     conn_id: state.selectedConnId,
     base_table: state.selectedTable,
+    schema_name: state.selectedSchema || null,
     fields: state.fields,
     joins: state.joins,
     filters: state.filters,
@@ -534,6 +663,12 @@ function renderBuilderCard(builderCard, resultCard) {
     renderJoinsBox(joinsBox);
   });
   builderCard.appendChild(addJoinBtn);
+
+  const suggestBtn = el("button", { class: "btn btn-sm", style: "margin-left:8px" }, "Önerilen İlişkiler");
+  const suggestBox = el("div", { id: "qb-suggest-box", style: "margin-top:8px" });
+  suggestBtn.addEventListener("click", () => withBusy(suggestBtn, () => loadRelationshipSuggestions(suggestBox)));
+  builderCard.appendChild(suggestBtn);
+  builderCard.appendChild(suggestBox);
 
   builderCard.appendChild(el("label", { style: "margin-top:16px" }, "Filtreler"));
   const filtersBox = el("div", { id: "qb-filters-box" });
@@ -603,6 +738,79 @@ async function getColumnsForTable(connId, table) {
     handleApiError(e, "Kolonlar alınamadı");
     return [];
   }
+}
+
+// Seçili tabloyla ilgili, daha önce analiz edilmiş (herhangi bir şemadaki)
+// ilişkileri getirir ve tek tıkla join olarak eklemeyi sağlar. DB-geneli
+// çalışır — getAnalysisResults() tüm şemalardan biriken veriyi döner,
+// burada şema filtrelemesi YAPILMAZ.
+async function loadRelationshipSuggestions(container) {
+  container.innerHTML = "";
+  container.appendChild(el("p", { class: "muted small" }, "Yükleniyor…"));
+
+  let data;
+  try {
+    data = await api.getAnalysisResults(state.selectedConnId);
+  } catch (e) {
+    container.innerHTML = "";
+    handleApiError(e, "İlişki önerileri alınamadı");
+    return;
+  }
+  container.innerHTML = "";
+
+  const table = state.selectedTable;
+  const matches = (data.relationships || []).filter(
+    (r) => r.table_a === table || r.table_b === table
+  );
+
+  if (!matches.length) {
+    container.appendChild(el("p", { class: "muted small" },
+      `"${table}" için kayıtlı ilişki bulunamadı. Bağlantılar sayfasından "Analiz Et" ile veritabanını taratın.`));
+    return;
+  }
+
+  const suggestions = matches
+    .map((r) => {
+      const flipped = r.table_a === table;
+      return {
+        t1: table,
+        f1: flipped ? r.column_a : r.column_b,
+        t2: flipped ? r.table_b : r.table_a,
+        f2: flipped ? r.column_b : r.column_a,
+        source: r.source,
+        confidence: r.confidence,
+      };
+    })
+    .filter((s) => !state.joins.some((j) => j.t2 === s.t2 && j.f1 === s.f1 && j.f2 === s.f2));
+
+  if (!suggestions.length) {
+    container.appendChild(el("p", { class: "muted small" }, "Tüm önerilen ilişkiler zaten eklenmiş."));
+    return;
+  }
+
+  const addAllBtn = el("button", { class: "btn btn-sm btn-primary" }, "Tümünü Ekle");
+  addAllBtn.addEventListener("click", () => {
+    for (const s of suggestions) {
+      state.joins.push({ type: "LEFT JOIN", t1: s.t1, f1: s.f1, t2: s.t2, f2: s.f2 });
+    }
+    renderJoinsBox(qs("#qb-joins-box"));
+    loadRelationshipSuggestions(container);
+  });
+  container.appendChild(addAllBtn);
+
+  const list = el("div", { style: "margin-top:8px" });
+  for (const s of suggestions) {
+    const label = `${s.t1}.${s.f1} → ${s.t2}.${s.f2}` +
+      (s.source === "fk_constraint" ? " (FK)" : ` (istatistiksel, güven ${s.confidence != null ? s.confidence.toFixed(2) : "-"})`);
+    const addBtn = el("button", { class: "btn btn-sm" }, `+ ${label}`);
+    addBtn.addEventListener("click", () => {
+      state.joins.push({ type: "LEFT JOIN", t1: s.t1, f1: s.f1, t2: s.t2, f2: s.f2 });
+      renderJoinsBox(qs("#qb-joins-box"));
+      loadRelationshipSuggestions(container);
+    });
+    list.appendChild(el("div", { style: "margin:4px 0" }, addBtn));
+  }
+  container.appendChild(list);
 }
 
 function renderJoinsBox(box) {
@@ -714,7 +922,8 @@ function renderCalcFieldsBox(box) {
 
 async function doPreview(resultCard) {
   try {
-    const body = { ...buildQueryShape(), limit: state.sample };
+    const conn = state.connections.find((c) => c.conn_id === state.selectedConnId);
+    const body = { ...buildQueryShape(), limit: state.sample, db_type: conn ? conn.db_type : "sqlite" };
     const res = await api.previewSql(body);
     state.lastPreview = res;
     renderResultCard(resultCard);
@@ -952,6 +1161,124 @@ function blankDashboard() {
   return { dashboard_id: null, name: "Yeni Dashboard", scale: "a4l", page_w_mm: 297, page_h_mm: 210, objects: [] };
 }
 
+/* ---- Dashboard Yerleşim Şablonları ---- */
+// Koordinatlar referans 297x210mm (a4l) üzerinden tasarlandı; applyDashboardTemplate
+// farklı page_w_mm/page_h_mm için oranlı ölçekler. Saf frontend — backend/API değişmedi.
+const DASHBOARD_TEMPLATES = {
+  classic: {
+    label: "Klasik",
+    desc: "3 KPI + 2 grafik + tablo",
+    refW: 297, refH: 210,
+    widgets: [
+      { type: "kpi",    title: "Toplam Ciro",        x: 5,   y: 5,   w: 90,  h: 35 },
+      { type: "kpi",    title: "Sipariş Sayısı",      x: 100, y: 5,   w: 90,  h: 35 },
+      { type: "kpi",    title: "Ortalama Sepet",      x: 195, y: 5,   w: 92,  h: 35 },
+      { type: "column", title: "Aylık Satış",         x: 5,   y: 45,  w: 140, h: 80 },
+      { type: "pie",    title: "Kategori Dağılımı",   x: 152, y: 45,  w: 135, h: 80 },
+      { type: "table",  title: "Detay Tablo",         x: 5,   y: 130, w: 282, h: 75 },
+    ],
+  },
+  focus: {
+    label: "Odak Grafik",
+    desc: "1 büyük grafik + yan metrikler",
+    refW: 297, refH: 210,
+    widgets: [
+      { type: "line", title: "Ana Trend", x: 5,   y: 5,   w: 190, h: 200 },
+      { type: "kpi",  title: "Metrik 1",  x: 200, y: 5,   w: 92,  h: 60 },
+      { type: "kpi",  title: "Metrik 2",  x: 200, y: 70,  w: 92,  h: 60 },
+      { type: "kpi",  title: "Metrik 3",  x: 200, y: 135, w: 92,  h: 60 },
+    ],
+  },
+  metrics: {
+    label: "Metrik Yoğun",
+    desc: "8 KPI kartı + trend çizgisi",
+    refW: 297, refH: 210,
+    widgets: [
+      { type: "kpi",  title: "KPI 1", x: 5,   y: 5,   w: 65,  h: 45 },
+      { type: "kpi",  title: "KPI 2", x: 77,  y: 5,   w: 65,  h: 45 },
+      { type: "kpi",  title: "KPI 3", x: 149, y: 5,   w: 65,  h: 45 },
+      { type: "kpi",  title: "KPI 4", x: 221, y: 5,   w: 65,  h: 45 },
+      { type: "kpi",  title: "KPI 5", x: 5,   y: 55,  w: 65,  h: 45 },
+      { type: "kpi",  title: "KPI 6", x: 77,  y: 55,  w: 65,  h: 45 },
+      { type: "kpi",  title: "KPI 7", x: 149, y: 55,  w: 65,  h: 45 },
+      { type: "kpi",  title: "KPI 8", x: 221, y: 55,  w: 65,  h: 45 },
+      { type: "line", title: "Trend", x: 5,   y: 105, w: 281, h: 100 },
+    ],
+  },
+  grid: {
+    label: "Izgara",
+    desc: "6 eşit panel, serbest düzenlemeye hazır zemin",
+    refW: 297, refH: 210,
+    widgets: [
+      { type: "column", title: "Panel 1", x: 5,   y: 5,   w: 90, h: 95 },
+      { type: "line",   title: "Panel 2", x: 102, y: 5,   w: 90, h: 95 },
+      { type: "pie",    title: "Panel 3", x: 199, y: 5,   w: 90, h: 95 },
+      { type: "bar",    title: "Panel 4", x: 5,   y: 105, w: 90, h: 95 },
+      { type: "table",  title: "Panel 5", x: 102, y: 105, w: 90, h: 95 },
+      { type: "donut",  title: "Panel 6", x: 199, y: 105, w: 90, h: 95 },
+    ],
+  },
+  mixed: {
+    label: "Karma",
+    desc: "KPI şeridi + büyük grafik + tablo + metin",
+    refW: 297, refH: 210,
+    widgets: [
+      { type: "kpi",    title: "Metrik 1",   x: 5,   y: 5,   w: 90,  h: 30 },
+      { type: "kpi",    title: "Metrik 2",   x: 100, y: 5,   w: 90,  h: 30 },
+      { type: "kpi",    title: "Metrik 3",   x: 195, y: 5,   w: 92,  h: 30 },
+      { type: "column", title: "Ana Grafik", x: 5,   y: 40,  w: 180, h: 100 },
+      { type: "table",  title: "Özet Tablo", x: 190, y: 40,  w: 102, h: 100 },
+      { type: "text",   title: "Not",        x: 5,   y: 145, w: 140, h: 55 },
+      { type: "pie",    title: "Dağılım",    x: 150, y: 145, w: 142, h: 55 },
+    ],
+  },
+};
+
+// Şablonu dash.objects'e uygular (mevcut objeleri DEĞİŞTİRİR). page_w_mm/page_h_mm
+// referanstan farklıysa koordinatları oranlı ölçekler.
+function applyDashboardTemplate(dash, key) {
+  const tmpl = DASHBOARD_TEMPLATES[key];
+  if (!tmpl) return;
+  const sx = dash.page_w_mm / tmpl.refW;
+  const sy = dash.page_h_mm / tmpl.refH;
+  dash.objects = tmpl.widgets.map((w) => ({
+    id: "w_" + Math.random().toString(36).slice(2, 9),
+    type: w.type,
+    x: Math.round(w.x * sx),
+    y: Math.round(w.y * sy),
+    w: Math.round(w.w * sx),
+    h: Math.round(w.h * sy),
+    title: w.title,
+    query_id: null,
+    color: "#378ADD",
+  }));
+}
+
+// Şablon seçim kartlarını içeren DOM elemanı döner. onPick(key) çağrılır;
+// key === "blank" boş dashboard, key === null iptal anlamına gelir.
+function renderTemplatePicker(onPick) {
+  const wrap = el("div", { class: "template-picker" });
+  wrap.appendChild(el("p", { class: "muted small" }, "Bir şablonla başlayın (sonra serbestçe düzenleyebilirsiniz):"));
+  const grid = el("div", { class: "template-grid" });
+  const options = [
+    { key: "blank", label: "Boş Dashboard", desc: "Sıfırdan başla" },
+    ...Object.entries(DASHBOARD_TEMPLATES).map(([key, t]) => ({ key, label: t.label, desc: t.desc })),
+  ];
+  for (const opt of options) {
+    const card = el("div", { class: "template-card" }, [
+      el("div", { class: "template-card-title" }, opt.label),
+      el("div", { class: "template-card-desc muted small" }, opt.desc),
+    ]);
+    card.addEventListener("click", () => onPick(opt.key));
+    grid.appendChild(card);
+  }
+  wrap.appendChild(grid);
+  const cancelBtn = el("button", { class: "btn btn-sm", style: "margin-top:8px" }, "İptal");
+  cancelBtn.addEventListener("click", () => onPick(null));
+  wrap.appendChild(cancelBtn);
+  return wrap;
+}
+
 /* ---- Undo/Redo ---- */
 
 // Dashboard'un mevcut objects dizisini derin kopyalayıp geçmişe ekler.
@@ -1013,13 +1340,27 @@ async function renderDashboardsView(root) {
   listCard.appendChild(el("h3", {}, "Kayıtlı Dashboard'lar"));
   const newBtn = el("button", { class: "btn btn-primary btn-sm" }, "+ Yeni Dashboard");
   newBtn.addEventListener("click", () => {
-    state.currentDashboard = blankDashboard();
-    state.selectedWidgetId = null;
-    state.dashHistory = [];
-    state.dashHistoryIndex = -1;
+    state.showTemplatePicker = true;
     renderView("dashboards");
   });
   listCard.appendChild(newBtn);
+
+  if (state.showTemplatePicker) {
+    listCard.appendChild(renderTemplatePicker((key) => {
+      state.showTemplatePicker = false;
+      if (key !== null) {
+        const dash = blankDashboard();
+        if (key !== "blank") applyDashboardTemplate(dash, key);
+        state.currentDashboard = dash;
+        state.selectedWidgetId = null;
+        state.dashHistory = [];
+        state.dashHistoryIndex = -1;
+      }
+      renderView("dashboards");
+    }));
+    root.appendChild(listCard);
+    return;
+  }
 
   const listBody = el("div", { style: "margin-top:12px" }, el("p", { class: "muted" }, "Yükleniyor…"));
   listCard.appendChild(listBody);
@@ -1109,6 +1450,23 @@ function renderDashboardEditor(root) {
   undoBtn.addEventListener("click", () => undoDashboard());
   redoBtn.addEventListener("click", () => redoDashboard());
 
+  const templateSelect = el("select", { id: "dash-template-select" }, [
+    el("option", { value: "" }, "Şablon uygula…"),
+    ...Object.entries(DASHBOARD_TEMPLATES).map(([key, t]) => el("option", { value: key }, t.label)),
+  ]);
+  templateSelect.addEventListener("change", () => {
+    const key = templateSelect.value;
+    if (!key) return;
+    if (dash.objects.length && !confirm("Mevcut widget'lar silinip şablon yerleştirilecek. Emin misiniz?")) {
+      templateSelect.value = "";
+      return;
+    }
+    applyDashboardTemplate(dash, key);
+    renderCanvasPage(canvasPage);
+    pushHistory();
+    templateSelect.value = "";
+  });
+
   const saveBtn = el("button", { class: "btn btn-primary" }, dash.dashboard_id ? "Güncelle" : "Kaydet");
   saveBtn.addEventListener("click", () => withBusy(saveBtn, async () => {
     try {
@@ -1134,6 +1492,7 @@ function renderDashboardEditor(root) {
   card.appendChild(el("div", { class: "dash-toolbar" }, [
     el("div", {}, [el("label", {}, "Ad"), nameInput]),
     el("div", {}, [el("label", {}, "Zoom"), el("div", { class: "row" }, [zoomInput, zoomLabel])]),
+    el("div", {}, [el("label", {}, "Şablon"), templateSelect]),
     undoBtn, redoBtn,
     saveBtn, closeBtn,
   ]));
