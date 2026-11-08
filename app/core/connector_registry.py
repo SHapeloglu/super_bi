@@ -179,6 +179,10 @@ class ConnectorRegistry:
         port     = params.get("port")
         database = params.get("database") or ""
 
+        # Faz 0.4: host politikası (loopback / metadata IP / allowlist). Create ve yeniden bağlanma buradan geçer.
+        from app.core.host_policy import check_db_host
+        check_db_host(host)
+
         from urllib.parse import quote_plus
         # Kullanıcı adı ve şifre URL'de sorun çıkarmasın diye kodlanır (ör. '@' veya '/' karakterleri).
         auth = f"{quote_plus(user)}:{quote_plus(password)}@" if user else ""
@@ -233,4 +237,7 @@ class ConnectorRegistry:
                     conn.execute(text("SELECT 1 FROM DUAL"))
             return True, "Bağlantı başarılı"
         except Exception as e:
-            return False, str(e)
+            # Faz 0.4: ham hata metni (IP, kullanıcı, iç ayrıntı) kullanıcıya gitmez; sunucu logunda kalır.
+            import logging
+            logging.getLogger(__name__).warning("Bağlantı testi başarısız: %s", e)
+            return False, "Bağlantı kurulamadı"

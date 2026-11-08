@@ -2,11 +2,14 @@
 Şifre yalnız şifreli hali ile saklanır (app.core.crypto). Canlı engine app.core.connector_registry'de tutulur.
 Kimlik ve sahiplik kontrolleri app.deps'te yapılır.
 """
+import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 
 from app.core.connector_registry import ConnectorRegistry
+from app.core.host_policy import HostPolicyError
+from app.core.sqlite_policy import SQLitePolicyError
 from app.core.repository import ConnectionMeta, ConnectionRepository
 from app.core.crypto import encrypt_password
 from app.deps import get_registry, get_repo, get_current_user, require_role, resolve_connection_engine
@@ -50,8 +53,13 @@ def create_connection(
     try:
         engine = registry.get_engine(conn_id, params.db_type, raw_params)
         ok, msg = registry.test_connection(engine)
-    except Exception as e:
+    except (HostPolicyError, SQLitePolicyError) as e:
+        # Politika mesajları sabit ve güvenli metinlerdir; kullanıcıya gösterilebilir.
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        # Faz 0.4: ham hata metni kullanıcıya gitmez; sunucu logunda kalır.
+        logging.getLogger(__name__).warning("Bağlantı oluşturma hatası: %s", e)
+        raise HTTPException(status_code=400, detail="Bağlantı kurulamadı")
 
     # Test başarısızsa geçici engine kapatılır ve hiçbir kayıt yapılmaz.
     if not ok:
