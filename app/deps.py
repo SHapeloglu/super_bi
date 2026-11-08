@@ -32,6 +32,9 @@ def get_dash_repo(req: Request) -> DashboardRepository:    return req.app.state.
 def get_hist_repo(req: Request) -> QueryHistoryRepository: return req.app.state.hist_repo
 # get_dataset_repo: Dataset (kayıtlı sorgu) repository'sini döner.
 def get_dataset_repo(req: Request) -> DatasetRepository:   return req.app.state.dataset_repo
+# get_share_repo: Paylaşım (shares) repository'sini döner (Faz 1.2).
+def get_share_repo(req: Request):
+    return req.app.state.share_repo
 # get_executor: Sorgu çalıştırıcı ve cache nesnesini döner.
 def get_executor(req: Request)  -> QueryExecutor:          return req.app.state.executor
 

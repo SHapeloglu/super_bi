@@ -138,6 +138,19 @@ CREATE INDEX IF NOT EXISTS idx_qh_fingerprint ON query_history(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_qh_conn_id     ON query_history(conn_id);
 CREATE INDEX IF NOT EXISTS idx_qh_created     ON query_history(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ds_owner       ON datasets(owner_id);
+-- Faz 1.2: dataset / dashboard paylaşımları (alıcı kullanıcı ya da rol; izin read / write)
+CREATE TABLE IF NOT EXISTS shares (
+    share_id      TEXT PRIMARY KEY,
+    resource_type TEXT NOT NULL,
+    resource_id   TEXT NOT NULL,
+    grantee_type  TEXT NOT NULL,
+    grantee_id    TEXT NOT NULL,
+    permission    TEXT NOT NULL,
+    created_by    TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    UNIQUE(resource_type, resource_id, grantee_type, grantee_id)
+);
+CREATE INDEX IF NOT EXISTS idx_shares_grantee ON shares(grantee_type, grantee_id);
 """
 
 

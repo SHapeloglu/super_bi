@@ -8,9 +8,20 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.core.repository import Dashboard, DashboardObj, DashboardRepository
-from app.deps import get_dash_repo, get_current_user
+from app.deps import get_dash_repo, get_current_user, get_share_repo
+from app.core.sharing import ShareRepository, effective_permission, allows
 
 router = APIRouter()
+
+
+def perm_of(resource_id: str, owner_id, current, shares: ShareRepository):
+    """Kullanıcının bu dashboard üzerindeki etkin izni (None = erişim yok)."""
+    if owner_id is None:
+        return None
+    return effective_permission(
+        owner_id=owner_id, user_id=current.user_id, role=current.role,
+        shared=shares.permission_for("dashboard", resource_id, current.user_id, current.role),
+    )
 
 
 class DashboardObjIn(BaseModel):
@@ -66,24 +77,21 @@ def update_dashboard(
     body: DashboardIn,
     current = Depends(get_current_user),
     repo: DashboardRepository = Depends(get_dash_repo),
+    shares: ShareRepository = Depends(get_share_repo),
 ):
-    # Sahiplik kontrolü
     """
-    Var olan dashboard'u günceller. Admin herkesinkini, diğer kullanıcılar sadece kendininkini güncelleyebilir.
-    Yetki yoksa ya da kayıt yoksa 404 döner.
+    Var olan dashboard'u günceller. Sahip, admin ya da 'write' paylaşımı olan kullanıcı güncelleyebilir.
+    Erişimi yoksa 404; yalnız okuma izni varsa 403. Sahiplik değişmez.
     """
-    try:
-        if current.role == "admin":
-            existing = repo.get(dashboard_id)
-            # Kayıt yoksa KeyError fırlatılır; aşağıdaki except bloğu bunu 404'e çevirir.
-            if not existing: raise KeyError
-        else:
-            repo.get_owned_or_raise(dashboard_id, current.user_id)
-    except KeyError:
+    existing = repo.get(dashboard_id)
+    perm = perm_of(dashboard_id, existing.owner_id if existing else None, current, shares)
+    if existing is None or perm is None:
         raise HTTPException(status_code=404, detail="Dashboard bulunamadı")
+    if not allows(perm, "write"):
+        raise HTTPException(status_code=403, detail="Bu dashboard'u değiştirme yetkiniz yok")
 
     dash = Dashboard(
-        dashboard_id=dashboard_id, owner_id=current.user_id, name=body.name,
+        dashboard_id=dashboard_id, owner_id=existing.owner_id, name=body.name,
         scale=body.scale, page_w_mm=body.page_w_mm, page_h_mm=body.page_h_mm,
         objects=[DashboardObj(**o.model_dump()) for o in body.objects],
     )
@@ -95,15 +103,30 @@ def update_dashboard(
 def list_dashboards(
     current = Depends(get_current_user),
     repo: DashboardRepository = Depends(get_dash_repo),
+    shares: ShareRepository = Depends(get_share_repo),
 ):
-    """Dashboard listesini döner. Admin tümünü, diğer kullanıcılar sadece kendininkileri görür. Objeler listede yer almaz."""
-    # Admin için owner None verilir: filtre uygulanmaz, tüm dashboard'lar gelir.
-    owner = None if current.role == "admin" else current.user_id
-    return [
-        {"dashboard_id": d.dashboard_id, "owner_id": d.owner_id, "name": d.name,
-         "scale": d.scale, "updated_at": d.updated_at}
-        for d in repo.list_all(owner_id=owner)
-    ]
+    """Sahip olunan ve paylaşılan dashboard'ları döner (admin hepsini). Objeler listede yer almaz; 'permission' alanı var."""
+    if current.role == "admin":
+        items = repo.list_all(owner_id=None)
+        shared = {}
+    else:
+        items = repo.list_all(owner_id=current.user_id)
+        shared = shares.shared_map("dashboard", current.user_id, current.role)
+        seen = {d.dashboard_id for d in items}
+        for d_id in shared:
+            if d_id not in seen:
+                d = repo.get(d_id)
+                if d:
+                    items.append(d)
+    out = []
+    for d in items:
+        perm = effective_permission(owner_id=d.owner_id, user_id=current.user_id,
+                                    role=current.role, shared=shared.get(d.dashboard_id))
+        if perm is None:
+            continue
+        out.append({"dashboard_id": d.dashboard_id, "owner_id": d.owner_id, "name": d.name,
+                    "scale": d.scale, "updated_at": d.updated_at, "permission": perm})
+    return out
 
 
 @router.get("/{dashboard_id}")
@@ -111,19 +134,16 @@ def get_dashboard(
     dashboard_id: str,
     current = Depends(get_current_user),
     repo: DashboardRepository = Depends(get_dash_repo),
+    shares: ShareRepository = Depends(get_share_repo),
 ):
-    """Tek bir dashboard'u grafik objeleriyle birlikte döner. Yetki yoksa ya da kayıt yoksa 404 döner."""
-    try:
-        if current.role == "admin":
-            dash = repo.get(dashboard_id)
-            if not dash: raise KeyError
-        else:
-            dash = repo.get_owned_or_raise(dashboard_id, current.user_id)
-    except KeyError:
+    """Tek bir dashboard'u grafik objeleriyle ve etkin iznimle birlikte döner. Erişim yoksa ya da kayıt yoksa 404."""
+    dash = repo.get(dashboard_id)
+    perm = perm_of(dashboard_id, dash.owner_id if dash else None, current, shares)
+    if dash is None or perm is None:
         raise HTTPException(status_code=404, detail="Dashboard bulunamadı")
 
     from dataclasses import asdict
-    return asdict(dash)
+    return {**asdict(dash), "permission": perm}
 
 
 @router.delete("/{dashboard_id}")
@@ -131,14 +151,16 @@ def delete_dashboard(
     dashboard_id: str,
     current = Depends(get_current_user),
     repo: DashboardRepository = Depends(get_dash_repo),
+    shares: ShareRepository = Depends(get_share_repo),
 ):
-    """Dashboard'u siler. Admin herkesinkini, diğer kullanıcılar sadece kendininkini silebilir. Silinemezse 404 döner."""
-    # Admin tüm dashboard'ları silebilir; diğerleri için sahiplik kontrollü silme yapılır.
-    if current.role == "admin":
-        deleted = repo.delete(dashboard_id)
-    else:
-        deleted = repo.delete_owned(dashboard_id, current.user_id)
-
-    if not deleted:
+    """Dashboard'u siler. Yalnız sahip ya da admin silebilir (paylaşım izni silme yetkisi vermez)."""
+    dash = repo.get(dashboard_id)
+    perm = perm_of(dashboard_id, dash.owner_id if dash else None, current, shares)
+    if dash is None or perm is None:
         raise HTTPException(status_code=404, detail="Dashboard bulunamadı")
+    if not (current.role == "admin" or dash.owner_id == current.user_id):
+        raise HTTPException(status_code=403, detail="Dashboard yalnız sahibi tarafından silinebilir")
+
+    repo.delete(dashboard_id)
+    shares.delete_for_resource("dashboard", dashboard_id)
     return {"msg": f"{dashboard_id} silindi"}

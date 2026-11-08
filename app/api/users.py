@@ -16,7 +16,7 @@ router = APIRouter()
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=256)
-    role: Literal["admin", "viewer"] = "viewer"
+    role: Literal["admin", "editor", "viewer"] = "viewer"
 
 
 @router.post("", status_code=201)

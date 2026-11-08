@@ -15,9 +15,20 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.core.repository import Dataset, DatasetRepository, ConnectionRepository
-from app.deps import get_dataset_repo, get_repo, get_current_user
+from app.deps import get_dataset_repo, get_repo, get_current_user, get_share_repo
+from app.core.sharing import ShareRepository, effective_permission, allows
 
 router = APIRouter()
+
+
+def perm_of(resource_id: str, owner_id, current, shares: ShareRepository):
+    """Kullanıcının bu dataset üzerindeki etkin izni (None = erişim yok)."""
+    if owner_id is None:
+        return None
+    return effective_permission(
+        owner_id=owner_id, user_id=current.user_id, role=current.role,
+        shared=shares.permission_for("dataset", resource_id, current.user_id, current.role),
+    )
 
 
 class DatasetIn(BaseModel):
@@ -77,23 +88,20 @@ def update_dataset(
     current    = Depends(get_current_user),
     repo:      DatasetRepository   = Depends(get_dataset_repo),
     conn_repo: ConnectionRepository = Depends(get_repo),
+    shares:    ShareRepository     = Depends(get_share_repo),
 ):
     """
-    Var olan dataset'i günceller. Admin herkesinkini, diğer kullanıcılar sadece kendininkini güncelleyebilir.
-    Bağlı widget'lar bir sonraki görüntülemede yeni tanımı kullanır. Yetki yoksa 404 döner.
+    Var olan dataset'i günceller. Sahip, admin ya da 'write' paylaşımı olan kullanıcı güncelleyebilir.
+    Erişimi yoksa 404; yalnız okuma izni varsa 403. Sahiplik değişmez.
     """
-    try:
-        if current.role == "admin":
-            existing = repo.get(dataset_id)
-            # Kayıt yoksa KeyError fırlatılır; aşağıdaki except bloğu 404'e çevirir.
-            if not existing: raise KeyError
-            # Admin güncellerken dataset'in mevcut sahibi korunur; admin sahip olarak değiştirilmez.
-            owner_id = existing.owner_id
-        else:
-            existing = repo.get_owned_or_raise(dataset_id, current.user_id)
-            owner_id = current.user_id
-    except KeyError:
+    existing = repo.get(dataset_id)
+    perm = perm_of(dataset_id, existing.owner_id if existing else None, current, shares)
+    if existing is None or perm is None:
         raise HTTPException(status_code=404, detail="Dataset bulunamadı")
+    if not allows(perm, "write"):
+        raise HTTPException(status_code=403, detail="Bu dataset'i değiştirme yetkiniz yok")
+    # Güncellemede sahip korunur: paylaşılan kaydı düzenlemek sahipliği değiştirmez.
+    owner_id = existing.owner_id
 
     # Güncellemede yeni seçilen bağlantının da kullanıcıya ait olduğu kontrol edilir.
     _check_conn_ownership(body.conn_id, current, conn_repo)
@@ -112,15 +120,31 @@ def update_dataset(
 def list_datasets(
     current = Depends(get_current_user),
     repo: DatasetRepository = Depends(get_dataset_repo),
+    shares: ShareRepository = Depends(get_share_repo),
 ):
-    """Dataset listesini döner. Admin tümünü, diğer kullanıcılar sadece kendininkini görür."""
-    # Admin için owner None: tüm dataset'ler listelenir.
-    owner = None if current.role == "admin" else current.user_id
-    return [
-        {"dataset_id": d.dataset_id, "owner_id": d.owner_id, "name": d.name,
-         "conn_id": d.conn_id, "base_table": d.base_table, "updated_at": d.updated_at}
-        for d in repo.list_all(owner_id=owner)
-    ]
+    """Sahip olunan ve kendisine paylaşılan dataset'leri döner (admin hepsini). Her kayıtta 'permission' alanı var."""
+    if current.role == "admin":
+        items = repo.list_all(owner_id=None)
+        shared = {}
+    else:
+        items = repo.list_all(owner_id=current.user_id)
+        shared = shares.shared_map("dataset", current.user_id, current.role)
+        seen = {d.dataset_id for d in items}
+        for ds_id in shared:
+            if ds_id not in seen:
+                ds = repo.get(ds_id)
+                if ds:
+                    items.append(ds)
+    out = []
+    for d in items:
+        perm = effective_permission(owner_id=d.owner_id, user_id=current.user_id,
+                                    role=current.role, shared=shared.get(d.dataset_id))
+        if perm is None:
+            continue
+        out.append({"dataset_id": d.dataset_id, "owner_id": d.owner_id, "name": d.name,
+                    "conn_id": d.conn_id, "base_table": d.base_table, "updated_at": d.updated_at,
+                    "permission": perm})
+    return out
 
 
 @router.get("/{dataset_id}")
@@ -128,19 +152,16 @@ def get_dataset(
     dataset_id: str,
     current = Depends(get_current_user),
     repo: DatasetRepository = Depends(get_dataset_repo),
+    shares: ShareRepository = Depends(get_share_repo),
 ):
-    """Tek bir dataset'i tanımıyla birlikte döner. Yetki yoksa ya da kayıt yoksa 404 döner."""
-    try:
-        if current.role == "admin":
-            ds = repo.get(dataset_id)
-            if not ds: raise KeyError
-        else:
-            ds = repo.get_owned_or_raise(dataset_id, current.user_id)
-    except KeyError:
+    """Tek bir dataset'i tanımıyla ve etkin iznimle birlikte döner. Erişim yoksa ya da kayıt yoksa 404."""
+    ds = repo.get(dataset_id)
+    perm = perm_of(dataset_id, ds.owner_id if ds else None, current, shares)
+    if ds is None or perm is None:
         raise HTTPException(status_code=404, detail="Dataset bulunamadı")
 
     from dataclasses import asdict
-    return asdict(ds)
+    return {**asdict(ds), "permission": perm}
 
 
 @router.delete("/{dataset_id}")
@@ -148,13 +169,16 @@ def delete_dataset(
     dataset_id: str,
     current = Depends(get_current_user),
     repo: DatasetRepository = Depends(get_dataset_repo),
+    shares: ShareRepository = Depends(get_share_repo),
 ):
-    """Dataset'i siler. Admin herkesinkini, diğer kullanıcılar sadece kendininkini silebilir. Silinemezse 404 döner."""
-    if current.role == "admin":
-        deleted = repo.delete(dataset_id)
-    else:
-        deleted = repo.delete_owned(dataset_id, current.user_id)
-
-    if not deleted:
+    """Dataset'i siler. Yalnız sahip ya da admin silebilir (paylaşım izni silme yetkisi vermez)."""
+    ds = repo.get(dataset_id)
+    perm = perm_of(dataset_id, ds.owner_id if ds else None, current, shares)
+    if ds is None or perm is None:
         raise HTTPException(status_code=404, detail="Dataset bulunamadı")
+    if not (current.role == "admin" or ds.owner_id == current.user_id):
+        raise HTTPException(status_code=403, detail="Dataset yalnız sahibi tarafından silinebilir")
+
+    repo.delete(dataset_id)
+    shares.delete_for_resource("dataset", dataset_id)
     return {"msg": f"{dataset_id} silindi"}

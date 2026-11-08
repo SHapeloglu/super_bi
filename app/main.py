@@ -58,6 +58,8 @@ async def lifespan(app: FastAPI):
     app.state.hist_repo = QueryHistoryRepository(store)
     app.state.dataset_repo = DatasetRepository(store)
     app.state.user_repo = UserRepository(store)
+    from app.core.sharing import ShareRepository  # Faz 1.2: paylaşım deposu
+    app.state.share_repo = ShareRepository(store)
     app.state.executor  = QueryExecutor()
 
     logger.info("DataLens başlatıldı — DB: %s", DATALENS_DB)
@@ -112,10 +114,11 @@ async def generic_handler(request: Request, exc: Exception):
 # ── Router'lar ──────────────────────────────────────────────────────
 
 # Router modülleri burada import edilir. E402 uyarısı (import yeri) bilerek bastırılmıştır.
-from app.api import auth, connections, drivers, schema, query, dashboard, history, datasets, analyze, users  # noqa: E402
+from app.api import auth, connections, drivers, schema, query, dashboard, history, datasets, analyze, users, shares  # noqa: E402
 
 app.include_router(auth.router,        prefix="/api/auth",       tags=["auth"])
 app.include_router(users.router,       prefix="/api/users",      tags=["users"])
+app.include_router(shares.router,      prefix="/api/shares",     tags=["shares"])
 app.include_router(drivers.router,     prefix="/api/drivers",    tags=["drivers"])
 app.include_router(connections.router, prefix="/api/connections",tags=["connections"])
 app.include_router(schema.router,      prefix="/api/schema",     tags=["schema"])
