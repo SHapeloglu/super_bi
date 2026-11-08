@@ -223,8 +223,12 @@ def test_dataset_baglanti_degisince_sahiplik_kontrolu_yapilir():
     _mk_dataset(dr)
     sr.create("dataset", "d1", "user", "other", "write", created_by="owner")
     body = ds_api.DatasetIn(name="Yeni", conn_id="c9", base_table="sales")
-    assert _status(lambda: ds_api.update_dataset("d1", body, current=_u("other"), repo=dr,
+    # Sahip, bağlantıyı kendisine ait olmayan bir bağlantıya yönlendiremez.
+    assert _status(lambda: ds_api.update_dataset("d1", body, current=_u("owner"), repo=dr,
                                                  conn_repo=_YokBaglanti(), shares=sr)) == 404
+    # Yazma izni olan alıcı yapıyı (bağlantıyı) değiştiremez.
+    assert _status(lambda: ds_api.update_dataset("d1", body, current=_u("other"), repo=dr,
+                                                 conn_repo=_YokBaglanti(), shares=sr)) == 403
 
 
 TESTS = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]

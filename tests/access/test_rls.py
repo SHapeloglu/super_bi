@@ -189,12 +189,15 @@ def test_admin_kural_ekler_ve_listeler():
 
 
 def test_ozellik_yalniz_admin_ayarlar():
-    _, _, _, _, ar = _env()
+    from app.auth.user_repository import UserRepository
+    store, _, _, _, ar = _env()
+    users = UserRepository(store)
+    uid = users.create("u1", "guclu-sifre-1", role="viewer").user_id
     body = users_api.AttributeIn(value="sales")
-    assert _status(lambda: users_api.set_attribute("u1", "department", body,
-                                                   current=_u("u1"), attr_repo=ar)) == 403
-    assert _status(lambda: users_api.set_attribute("u1", "department", body,
-                                                   current=_u("adm", "admin"), attr_repo=ar)) == 200
+    assert _status(lambda: users_api.set_attribute(uid, "department", body, current=_u("u1"),
+                                                   attr_repo=ar, user_repo=users)) == 403
+    assert _status(lambda: users_api.set_attribute(uid, "department", body, current=_u("adm", "admin"),
+                                                   attr_repo=ar, user_repo=users)) == 200
 
 
 TESTS = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]

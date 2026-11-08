@@ -114,6 +114,16 @@ def update_dataset(
     # Güncellemede sahip korunur: paylaşılan kaydı düzenlemek sahipliği değiştirmez.
     owner_id = existing.owner_id
 
+    # Yazma izni yalnız adı değiştirebilir. Yapıyı (tablo, bağlantı, kolonlar, join, filtre, gruplama,
+    # sıralama) yalnız sahip ya da admin değiştirir; aksi halde veri seti kapsamı genişletilebilir.
+    if current.role != "admin" and existing.owner_id != current.user_id:
+        yapi_ayni = (body.conn_id == existing.conn_id and body.base_table == existing.base_table
+                     and body.fields == existing.fields and body.joins == existing.joins
+                     and body.filters == existing.filters and body.group_by == existing.group_by
+                     and body.order_by == existing.order_by)
+        if not yapi_ayni:
+            raise HTTPException(status_code=403, detail="Veri setinin yapısını yalnız sahibi değiştirebilir")
+
     # Bağlantı değişiyorsa yeni bağlantının kullanıcıya ait olduğu kontrol edilir.
     # Aynı bağlantı korunuyorsa kontrol yapılmaz: yazma paylaşımı alan kullanıcı sahibin bağlantısını
     # değiştirmeden veri setini düzenleyebilmeli.
@@ -184,6 +194,7 @@ def delete_dataset(
     current = Depends(get_current_user),
     repo: DatasetRepository = Depends(get_dataset_repo),
     shares: ShareRepository = Depends(get_share_repo),
+    rls_repo: RuleRepository = Depends(get_rls_repo),
 ):
     """Dataset'i siler. Yalnız sahip ya da admin silebilir (paylaşım izni silme yetkisi vermez)."""
     ds = repo.get(dataset_id)
@@ -195,6 +206,7 @@ def delete_dataset(
 
     repo.delete(dataset_id)
     shares.delete_for_resource("dataset", dataset_id)
+    rls_repo.delete_for_dataset(dataset_id)
     return {"msg": f"{dataset_id} silindi"}
 
 
@@ -287,7 +299,7 @@ def _resolve_fields(requested: dict, allowed: dict) -> dict:
     Tanımsız ya da belirsiz kolon 400 döner.
     """
     out: dict = {}
-    for rk, role in requested.items():
+    for rk in requested:
         if rk in allowed:
             key = rk
         else:
@@ -295,7 +307,12 @@ def _resolve_fields(requested: dict, allowed: dict) -> dict:
             if not allowed or len(adaylar) != 1:
                 raise HTTPException(status_code=400, detail="İstenen kolonlar veri setinde tanımlı değil")
             key = adaylar[0]
-        out[key] = role
+        # Gizli ('off') kolon istenemez. Rol her zaman sunucu tarafından atanır; istemcinin rolüne bakılmaz.
+        if allowed[key] == "off":
+            raise HTTPException(status_code=400, detail="İstenen kolonlar veri setinde tanımlı değil")
+        out[key] = "dim"
+    if not out:
+        raise HTTPException(status_code=400, detail="En az bir kolon seçilmelidir")
     return out
 
 
@@ -323,9 +340,15 @@ def run_dataset(
         raise HTTPException(status_code=404, detail="Dataset bulunamadı")
 
     # Kolon alt kümesi: yalnız veri setinin kendi kolonları istenebilir (kayıtlı olmayan kolon 400).
-    fields = ds.fields
+    # Görünür kolonlar: veri setinde 'off' olmayanlar. Boş kalırsa sorgu '*' üretir ve gizli kolonlar
+    # sızar; bu yüzden boş seçim reddedilir.
+    gorunur = {k: r for k, r in ds.fields.items() if r != "off"}
     if body.fields is not None:
         fields = _resolve_fields(body.fields, ds.fields)
+    else:
+        if not gorunur:
+            raise HTTPException(status_code=400, detail="Veri setinde görünür kolon yok")
+        fields = gorunur
 
     # Bağlantı sahibinin kendi kimliği ile açılır; alıcının bağlantı erişimi yoktur.
     owner = SimpleNamespace(user_id=ds.owner_id, role="viewer")

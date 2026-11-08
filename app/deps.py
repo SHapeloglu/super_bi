@@ -57,11 +57,13 @@ def get_user_repo(req: Request):
 _bearer = HTTPBearer(auto_error=False)
 
 def get_current_user(
+    req: Request,
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ):
     """
-    Bearer token'ı çözer → TokenData döner.
-    Token yoksa veya geçersizse 401.
+    Bearer token'ı çözer → TokenData döner. Rol HER İSTEKTE veritabanından okunur: token süresi
+    dolmadan düşürülen ya da silinen kullanıcı hemen etkisiz olur. Token yoksa, geçersizse
+    ya da kullanıcı yoksa 401.
 
     Optional kullanım için: Depends(get_current_user_optional)
     """
@@ -73,13 +75,20 @@ def get_current_user(
         )
     try:
         from app.auth.jwt_core import parse_token
-        return parse_token(creds.credentials)
+        data = parse_token(creds.credentials)
     except ValueError as e:
         raise HTTPException(
             status_code=401,
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
+    users = req.app.state.user_repo
+    kayit = users.get_by_id(data.user_id)
+    if kayit is None:
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı",
+                            headers={"WWW-Authenticate": "Bearer"})
+    data.role = kayit.role
+    return data
 
 def get_current_user_optional(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),

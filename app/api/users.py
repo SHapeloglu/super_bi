@@ -4,6 +4,8 @@ yeni kullanıcıyı admin ekler. Rol yalnız 'admin' ya da 'viewer' olabilir.
 """
 from typing import Literal
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -46,9 +48,14 @@ def set_attribute(
     body: AttributeIn,
     current = Depends(get_current_user),
     attr_repo = Depends(get_attr_repo),
+    user_repo = Depends(get_user_repo),
 ):
     """Kullanıcı özniteliğini ayarlar (yalnız admin). Satır kuralları bu değeri kullanır."""
     if current.role != "admin":
         raise HTTPException(status_code=403, detail="Öznitelikleri yalnız admin ayarlayabilir")
+    if not re.fullmatch(r"[a-z_][a-z0-9_]{0,63}", key):
+        raise HTTPException(status_code=400, detail="Geçersiz öznitelik anahtarı")
+    if user_repo.get_by_id(user_id) is None:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
     attr_repo.set(user_id, key, body.value)
     return {"user_id": user_id, "key": key, "msg": "Öznitelik kaydedildi"}
