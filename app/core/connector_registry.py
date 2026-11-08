@@ -167,8 +167,10 @@ class ConnectorRegistry:
         dialect = DRIVER_MAP[db_type]["dialect"]
 
         if db_type == "sqlite":
-            # database alanı dosya yolu olarak kullanılır (":memory:" da geçerli)
-            return f"sqlite:///{params.get('database', ':memory:')}"
+            # Faz 0.1: yol keyfi değil. Kök dizin (DATALENS_SQLITE_ROOT) altında, var olan,
+            # metadata DB olmayan ve salt okunur açılan dosyalar kabul edilir (bkz. sqlite_policy).
+            from app.core.sqlite_policy import sqlite_url
+            return sqlite_url(params.get("database"))
 
         # Eksik değerler için varsayılanlar: kullanıcı ve şifre boş, host localhost.
         user     = params.get("user") or ""
