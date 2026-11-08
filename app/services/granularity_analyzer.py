@@ -123,9 +123,9 @@ class RelationshipCandidate:
         }
 
 
-def _q(identifier: str) -> str:
+def _q(identifier: str, dialect: str = "sqlite") -> str:
     """quote_identifier'ı çağıran kısa yardımcı. Güvenli olmayan bir ad gelirse ValueError fırlatır."""
-    return quote_identifier(identifier)
+    return quote_identifier(identifier, dialect)
 
 
 def _split_schema_table(table_name: str) -> tuple[str | None, str]:
@@ -212,7 +212,7 @@ def _row_count(engine: Engine, table_name: str) -> int:
     """Tablodaki toplam satır sayısını COUNT(*) ile döner."""
     # COUNT(*) büyük tablolarda yavaş olabilir; her çağrıda tam tarama yapılır.
     with engine.connect() as conn:
-        row = conn.execute(text(f"SELECT COUNT(*) AS n FROM {_q(table_name)}")).fetchone()
+        row = conn.execute(text(f"SELECT COUNT(*) AS n FROM {_q(table_name, engine.dialect.name)}")).fetchone()
     return int(row[0]) if row else 0
 
 
@@ -222,7 +222,7 @@ def _distinct_count(engine: Engine, table_name: str, column: str) -> int:
         # COUNT(DISTINCT) büyük tablolarda pahalıdır; tek kolon için tam tarama yapılır.
         row = conn.execute(
             text(
-                f"SELECT COUNT(DISTINCT {_q(column)}) AS n FROM {_q(table_name)}"
+                f"SELECT COUNT(DISTINCT {_q(column, engine.dialect.name)}) AS n FROM {_q(table_name, engine.dialect.name)}"
             )
         ).fetchone()
     return int(row[0]) if row else 0
@@ -259,14 +259,14 @@ def detect_grain(
     # Kompozit fallback: tüm (desteklenen) sütunları birlikte test et
     columns = safe_columns
     if len(columns) > 1:
-        col_list = ", ".join(_q(c) for c in columns)
+        col_list = ", ".join(_q(c, engine.dialect.name) for c in columns)
         # Tek kolon grain olmadıysa tüm desteklenen kolonların birlikte benzersizliği denenir.
         with engine.connect() as conn:
             row = conn.execute(
                 text(
                     # Alt sorgu: kolon kombinasyonlarının farklı satır sayısını sayar. Bu sayı toplam satır sayısına eşitse kombinasyon grain'dir.
                     f"SELECT COUNT(*) AS n FROM (SELECT DISTINCT {col_list} "
-                    f"FROM {_q(table_name)}) AS sub"
+                    f"FROM {_q(table_name, engine.dialect.name)}) AS sub"
                 )
             ).fetchone()
         composite_distinct = int(row[0]) if row else 0
@@ -383,8 +383,9 @@ def test_relationship(
     (A çok, B bir), yoksa many-to-many olarak işaretlenir.
     """
     # Tablo ve kolon adları güvenli hale getirilir. Ham metin SQL'e doğrudan konmaz.
-    qa_t, qa_c = _q(table_a), _q(column_a)
-    qb_t, qb_c = _q(table_b), _q(column_b)
+    dlc = engine.dialect.name
+    qa_t, qa_c = _q(table_a, dlc), _q(column_a, dlc)
+    qb_t, qb_c = _q(table_b, dlc), _q(column_b, dlc)
 
     with engine.connect() as conn:
         # Payda: kaynak kolonda NULL olmayan satır sayısı.
