@@ -55,12 +55,17 @@ _SYSTEM_SCHEMAS = {
 # ---------------------------------------------------------------------------
 
 class AnalyzeTablesRequest(BaseModel):
+    """
+    Tablo analizi isteği. schema_name: tek bir şema. tables: sadece bu tablolar (verilmezse hepsi).
+    all_schemas=True ise sistem dışındaki tüm şemalar taranır.
+    """
     schema_name: Optional[str] = None
     tables: Optional[list[str]] = None  # None = tüm tablolar
     all_schemas: bool = False  # True ise sistem şemaları hariç TÜM şemalar taranır
 
 
 class RelationshipTestRequest(BaseModel):
+    """İki sütun arası ilişki testi isteği: table_a.column_a ile table_b.column_b karşılaştırılır."""
     table_a: str
     column_a: str
     table_b: str
@@ -72,7 +77,9 @@ class RelationshipTestRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _save_profile(store: SQLiteStore, conn_id: str, profile: ga.TableProfile) -> None:
+    """Tablo profilini table_profiles tablosuna kaydeder. Aynı (bağlantı, tablo) çifti varsa günceller (UPSERT)."""
     profile_id = str(uuid.uuid4())
+    # Aynı (bağlantı, tablo) için kayıt varsa güncellenir (UPSERT), yoksa eklenir. Tekrar analiz güvenlidir.
     store.execute(
         """
         INSERT INTO table_profiles
@@ -98,6 +105,7 @@ def _save_profile(store: SQLiteStore, conn_id: str, profile: ga.TableProfile) ->
 def _save_relationship(
     store: SQLiteStore, conn_id: str, rel: ga.RelationshipCandidate
 ) -> None:
+    """İlişki adayını datasets_relationships tablosuna kaydeder. Aynı ilişki varsa günceller."""
     rel_id = str(uuid.uuid4())
     store.execute(
         """
@@ -161,6 +169,10 @@ def analyze_tables(
     insp = sa_inspect(engine)
 
     def run_for_schema(schema: Optional[str]) -> dict:
+        """
+        Tek bir şemadaki tabloları profiller ve FK ilişkilerini bulur.
+        Hatalar fırlatılmaz; errors listesine yazılır. Sonuç bir sözlük olarak döner.
+        """
         try:
             all_tables = insp.get_table_names(schema=schema)
         except Exception as e:
@@ -170,10 +182,13 @@ def analyze_tables(
                 "errors": [{"schema": schema, "error": f"Tablo listesi alınamadı: {e}"}],
             }
 
+        # İstekte tablo listesi verilmişse onlar, verilmemişse şemadaki tüm tablolar kullanılır.
         target_tables = body.tables if body.tables else all_tables
+        # İstenen ama veritabanında bulunmayan tablolar atlanır.
         target_tables = [t for t in target_tables if t in all_tables]
 
         def full_name(table: str) -> str:
+            """Tablo adını şema ile birlikte 'Şema.Tablo' biçimine çevirir. Şema yoksa sadece tablo adı döner."""
             return f"{schema}.{table}" if schema else table
 
         profiled = []
@@ -208,6 +223,7 @@ def analyze_tables(
             "profiled": profiled, "fk_rels": fk_rels, "errors": errors,
         }
 
+    # Tüm şemalar taranır; sistem şemaları (_SYSTEM_SCHEMAS) küçük harfle karşılaştırılarak çıkarılır.
     if body.all_schemas:
         try:
             schema_names = insp.get_schema_names()
@@ -259,6 +275,7 @@ def test_relationship(
             body.table_b, body.column_b,
         )
         _save_relationship(store, conn_id, rel)
+    # DİKKAT: Ham hata metni (veritabanı hatası dahil) 500 cevabında kullanıcıya gösterilir. Bilgi sızıntısı açısından sınırlandırılabilir.
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -275,12 +292,12 @@ def get_analysis_results(
     """
     Bu bağlantıya ait tüm kayıtlı profil ve ilişkileri döner.
     """
-    # Sahiplik kontrolü — bağlantı bu kullanıcıya ait mi?
-    from app.deps import get_user_repo
+    # Sahiplik kontrolü — bağlantı bu kullanıcıya ait mi (admin hariç)? Başkasının bağlantısı 404 döner.
     conn = repo.get(conn_id)
-    if not conn:
+    if not conn or (current.role != "admin" and conn.owner_id != current.user_id):
         raise HTTPException(status_code=404, detail="Bağlantı bulunamadı")
 
+    # Kayıtlar yalnız bu conn_id için çekilir; diğer bağlantıların verisi karışmaz.
     profiles = store.fetchall(
         "SELECT * FROM table_profiles WHERE conn_id = :cid ORDER BY analyzed_at DESC",
         {"cid": conn_id},

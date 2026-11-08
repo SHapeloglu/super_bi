@@ -24,12 +24,18 @@ def register(
     body: UserRegister,
     repo: UserRepository = Depends(get_user_repo),
 ):
-    role = "admin" if repo.count() == 0 else "viewer"
+    # İlk kayıt admin olur (ilk kurulumda giriş yapacak kimse kalmasın diye). Rol, kaydın eklendiği
+    # tek SQL içinde belirlenir (repo.create); bu sayede aynı anda gelen iki ilk kayıt da admin olamaz.
+    """
+    Yeni kullanıcı kaydı (201). İlk kullanıcı admin, sonrakiler viewer rolüyle açılır. Kullanıcı adı alınmışsa 409 döner.
+    Başarılıysa hemen token döner; ayrıca giriş yapılması gerekmez.
+    """
     try:
-        user = repo.create(body.username, body.password, role=role)
+        user = repo.create(body.username, body.password)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
+    # JWT token: kullanıcı kimliği, adı ve rolünü taşır; sonraki isteklerde Authorization başlığıyla gönderilir.
     token = create_token(user.user_id, user.username, user.role)
     return TokenResponse(access_token=token, role=user.role, user_id=user.user_id)
 
@@ -39,7 +45,9 @@ def login(
     body: UserLogin,
     repo: UserRepository = Depends(get_user_repo),
 ):
+    """Kullanıcı adı ve şifreyle giriş yapar. Başarılıysa JWT token döner; hatalıysa 401 döner."""
     user = repo.authenticate(body.username, body.password)
+    # Kullanıcı adı yanlış ya da şifre yanlışsa aynı mesaj döner; böylece hangi kullanıcı adlarının var olduğu anlaşılmaz.
     if user is None:
         raise HTTPException(status_code=401, detail="Kullanıcı adı veya şifre hatalı")
 
