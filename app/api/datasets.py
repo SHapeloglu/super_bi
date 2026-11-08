@@ -18,7 +18,11 @@ from types import SimpleNamespace
 from pydantic import Field
 
 from app.core.repository import Dataset, DatasetRepository, ConnectionRepository
-from app.deps import get_dataset_repo, get_repo, get_current_user, get_share_repo, get_registry, get_executor, resolve_connection_engine
+from app.deps import get_dataset_repo, get_repo, get_current_user, get_share_repo, get_registry, get_executor, resolve_connection_engine, get_rls_repo, get_attr_repo
+from app.core.rls import RuleRepository, AttributeRepository, build_rls_filters, RLSError
+from app.core.connector_registry import quote_identifier
+from pydantic import model_validator
+from typing import Any
 from app.core.sharing import ShareRepository, effective_permission, allows
 from app.core.connector_registry import ConnectorRegistry
 from app.models.schemas import JoinDef, FilterDef
@@ -194,6 +198,78 @@ def delete_dataset(
     return {"msg": f"{dataset_id} silindi"}
 
 
+class RuleIn(BaseModel):
+    """
+    Satır kuralı: column operator (value | attr). value sabit değer ya da liste (IN için);
+    attr kullanıcı özniteliğinin adıdır (değeri kullanıcıdan alınır; yalnız = ve != ile).
+    """
+    column:   str = Field(min_length=1, max_length=128)
+    operator: Literal["=", "!=", "IN", "NOT IN"]
+    value:    Any = None
+    attr:     Optional[str] = Field(default=None, min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def _kural_tutarli(self):
+        if (self.attr is None) == (self.value is None):
+            raise ValueError("value ya da attr alanlarından tam biri verilmeli")
+        if self.attr is not None and self.operator not in ("=", "!="):
+            raise ValueError("Öznitelik kuralları yalnız = ve != ile kullanılabilir")
+        if self.operator in ("IN", "NOT IN") and not isinstance(self.value, list):
+            raise ValueError("IN / NOT IN için liste gerekir")
+        return self
+
+
+def _yalniz_admin(current) -> None:
+    if current.role != "admin":
+        raise HTTPException(status_code=403, detail="Satır kurallarını yalnız admin yönetebilir")
+
+
+@router.post("/{dataset_id}/rules", status_code=201)
+def create_rule(
+    dataset_id: str,
+    body: RuleIn,
+    current = Depends(get_current_user),
+    repo: DatasetRepository = Depends(get_dataset_repo),
+    rls_repo: RuleRepository = Depends(get_rls_repo),
+):
+    """Veri setine satır kuralı ekler (yalnız admin). Kolon adı tanımlanabilir bir identifier olmalı."""
+    _yalniz_admin(current)
+    if repo.get(dataset_id) is None:
+        raise HTTPException(status_code=404, detail="Dataset bulunamadı")
+    try:
+        quote_identifier(body.column)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz kolon adı")
+    rule_id = rls_repo.add(dataset_id, body.column, body.operator, body.value, body.attr,
+                           created_by=current.user_id)
+    return {"rule_id": rule_id, "msg": "Kural eklendi"}
+
+
+@router.get("/{dataset_id}/rules")
+def list_rules(
+    dataset_id: str,
+    current = Depends(get_current_user),
+    repo: DatasetRepository = Depends(get_dataset_repo),
+    rls_repo: RuleRepository = Depends(get_rls_repo),
+):
+    """Veri setinin satır kuralları (yalnız admin)."""
+    _yalniz_admin(current)
+    return rls_repo.list_for(dataset_id)
+
+
+@router.delete("/rules/{rule_id}")
+def delete_rule(
+    rule_id: str,
+    current = Depends(get_current_user),
+    rls_repo: RuleRepository = Depends(get_rls_repo),
+):
+    """Satır kuralını siler (yalnız admin)."""
+    _yalniz_admin(current)
+    if not rls_repo.delete(rule_id):
+        raise HTTPException(status_code=404, detail="Kural bulunamadı")
+    return {"msg": "Kural silindi"}
+
+
 class DatasetRunIn(BaseModel):
     """
     Veri seti çalıştırma isteği. Örnek boyutu, önbellek modu ve (isteğe bağlı) kolon alt kümesi.
@@ -233,6 +309,8 @@ def run_dataset(
     registry: ConnectorRegistry = Depends(get_registry),
     conn_repo: ConnectionRepository = Depends(get_repo),
     executor: QueryExecutor = Depends(get_executor),
+    rls_repo: RuleRepository = Depends(get_rls_repo),
+    attr_repo: AttributeRepository = Depends(get_attr_repo),
 ):
     """
     Kayıtlı veri setini çalıştırır. Okuma izni olan herkes çalıştırabilir; bağlantı VERİ SETİNİN SAHİBİ
@@ -253,12 +331,22 @@ def run_dataset(
     owner = SimpleNamespace(user_id=ds.owner_id, role="viewer")
     engine, meta = resolve_connection_engine(ds.conn_id, owner, registry, conn_repo)
 
+    # Satır bazlı güvenlik: admin dışındaki herkes (sahip dahil) kuralların altındadır.
+    rls_filters = []
+    if current.role != "admin":
+        try:
+            rls_filters = build_rls_filters(rls_repo.list_for(dataset_id), current.user_id,
+                                            ds.base_table, attr_repo)
+        except RLSError:
+            raise HTTPException(status_code=403,
+                                detail="Bu veri seti için gerekli kullanıcı özniteliği tanımlı değil")
+
     try:
         sql, params = sql_builder.build(
             base_table=ds.base_table,
             fields=fields,
             joins=[JoinDef(**j) for j in ds.joins],
-            filters=[FilterDef(**f) for f in ds.filters],
+            filters=[FilterDef(**f) for f in ds.filters] + [FilterDef(**f) for f in rls_filters],
             group_by=ds.group_by,
             order_by=ds.order_by,
             limit=body.sample,

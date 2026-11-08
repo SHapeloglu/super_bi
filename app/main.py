@@ -60,6 +60,9 @@ async def lifespan(app: FastAPI):
     app.state.user_repo = UserRepository(store)
     from app.core.sharing import ShareRepository  # Faz 1.2: paylaşım deposu
     app.state.share_repo = ShareRepository(store)
+    from app.core.rls import RuleRepository, AttributeRepository  # Faz 1.3
+    app.state.rls_repo = RuleRepository(store)
+    app.state.attr_repo = AttributeRepository(store)
     app.state.executor  = QueryExecutor()
 
     logger.info("DataLens başlatıldı — DB: %s", DATALENS_DB)

@@ -25,6 +25,7 @@ from app.db.sqlite_store import SQLiteStore  # noqa: E402
 from app.core.repository import Dataset, DatasetRepository  # noqa: E402
 from app.core.sharing import ShareRepository  # noqa: E402
 from app.api import datasets as ds_api  # noqa: E402
+from app.core.rls import RuleRepository, AttributeRepository  # noqa: E402
 
 
 class _Exec:
@@ -62,7 +63,7 @@ def _run(current, dr, sr, ex, calls):
     _patch_engine(calls)
     body = ds_api.DatasetRunIn(sample=10)
     return ds_api.run_dataset("d1", body, current=current, repo=dr, shares=sr,
-                              registry=None, conn_repo=None, executor=ex)
+                              registry=None, conn_repo=None, executor=ex, rls_repo=RuleRepository(dr._s), attr_repo=AttributeRepository(dr._s))
 
 
 def _status(fn):
@@ -132,7 +133,7 @@ def test_alt_kume_kolon_secimi_sorguya_yansir():
     _patch_engine(calls)
     body = ds_api.DatasetRunIn(sample=10, fields={"id": "dim"})
     ds_api.run_dataset("d2", body, current=_u("other"), repo=dr, shares=sr,
-                       registry=None, conn_repo=None, executor=ex)
+                       registry=None, conn_repo=None, executor=ex, rls_repo=RuleRepository(dr._s), attr_repo=AttributeRepository(dr._s))
     sql = ex.calls[-1]["sql"]
     assert "id" in sql and "tutar" not in sql, sql
 
@@ -143,7 +144,7 @@ def test_veri_setinde_olmayan_kolon_400():
     _patch_engine(calls)
     body = ds_api.DatasetRunIn(sample=10, fields={"gizli_kolon": "dim"})
     assert _status(lambda: ds_api.run_dataset("d2", body, current=_u("other"), repo=dr, shares=sr,
-                                              registry=None, conn_repo=None, executor=ex)) == 400
+                                              registry=None, conn_repo=None, executor=ex, rls_repo=RuleRepository(dr._s), attr_repo=AttributeRepository(dr._s))) == 400
     assert ex.calls == [], "geçersiz kolonla sorgu çalıştı"
 
 
@@ -158,7 +159,7 @@ def test_noktali_anahtar_cıplak_kolon_adiyla_eslesir():
     _patch_engine(calls)
     body = ds_api.DatasetRunIn(sample=10, fields={"id": "dim"})
     ds_api.run_dataset("d3", body, current=_u("other"), repo=dr, shares=sr,
-                       registry=None, conn_repo=None, executor=ex)
+                       registry=None, conn_repo=None, executor=ex, rls_repo=RuleRepository(dr._s), attr_repo=AttributeRepository(dr._s))
     sql = ex.calls[-1]["sql"]
     assert "orders" in sql and "id" in sql and "tutar" not in sql, sql
 

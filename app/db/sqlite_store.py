@@ -151,6 +151,24 @@ CREATE TABLE IF NOT EXISTS shares (
     UNIQUE(resource_type, resource_id, grantee_type, grantee_id)
 );
 CREATE INDEX IF NOT EXISTS idx_shares_grantee ON shares(grantee_type, grantee_id);
+-- Faz 1.3: veri seti satır kuralları ve kullanıcı öznitelikleri
+CREATE TABLE IF NOT EXISTS row_rules (
+    rule_id      TEXT PRIMARY KEY,
+    dataset_id   TEXT NOT NULL,
+    column_name  TEXT NOT NULL,
+    operator     TEXT NOT NULL,
+    value_json   TEXT,
+    attr_name    TEXT,
+    created_by   TEXT NOT NULL,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rules_ds ON row_rules(dataset_id);
+CREATE TABLE IF NOT EXISTS user_attributes (
+    user_id     TEXT NOT NULL,
+    attr_key    TEXT NOT NULL,
+    attr_value  TEXT NOT NULL,
+    PRIMARY KEY (user_id, attr_key)
+);
 """
 
 

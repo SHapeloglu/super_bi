@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.auth.user_repository import UserRepository
-from app.deps import get_user_repo, require_role
+from app.deps import get_user_repo, require_role, get_current_user, get_attr_repo
 
 router = APIRouter()
 
@@ -32,3 +32,23 @@ def create_user(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return {"user_id": user.user_id, "username": user.username, "role": user.role}
+
+
+class AttributeIn(BaseModel):
+    """Kullanıcı özniteliği değeri (ör. department = 'sales')."""
+    value: str = Field(min_length=1, max_length=256)
+
+
+@router.put("/{user_id}/attributes/{key}")
+def set_attribute(
+    user_id: str,
+    key: str,
+    body: AttributeIn,
+    current = Depends(get_current_user),
+    attr_repo = Depends(get_attr_repo),
+):
+    """Kullanıcı özniteliğini ayarlar (yalnız admin). Satır kuralları bu değeri kullanır."""
+    if current.role != "admin":
+        raise HTTPException(status_code=403, detail="Öznitelikleri yalnız admin ayarlayabilir")
+    attr_repo.set(user_id, key, body.value)
+    return {"user_id": user_id, "key": key, "msg": "Öznitelik kaydedildi"}

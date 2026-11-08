@@ -35,6 +35,11 @@ def get_dataset_repo(req: Request) -> DatasetRepository:   return req.app.state.
 # get_share_repo: Paylaşım (shares) repository'sini döner (Faz 1.2).
 def get_share_repo(req: Request):
     return req.app.state.share_repo
+# get_rls_repo / get_attr_repo: satır kuralları ve kullanıcı öznitelikleri (Faz 1.3).
+def get_rls_repo(req: Request):
+    return req.app.state.rls_repo
+def get_attr_repo(req: Request):
+    return req.app.state.attr_repo
 # get_executor: Sorgu çalıştırıcı ve cache nesnesini döner.
 def get_executor(req: Request)  -> QueryExecutor:          return req.app.state.executor
 
