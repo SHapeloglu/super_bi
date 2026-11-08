@@ -171,8 +171,9 @@ def test_paylasim_yalniz_sahip_ya_da_admin():
     _mk_dataset(dr)
     body = shares_api.ShareIn(resource_type="dataset", resource_id="d1", grantee_type="user",
                               grantee_id="other", permission="read")
+    # Yetkisiz kullanıcıya kaynak da yok gibi görünür (404): varlık sızdırılmaz.
     assert _status(lambda: shares_api.create_share(body, current=_u("other"), share_repo=sr,
-                                                   ds_repo=dr, dash_repo=None, user_repo=_Users())) == 403
+                                                   ds_repo=dr, dash_repo=None, user_repo=_Users())) == 404
     assert _status(lambda: shares_api.create_share(body, current=_u("owner"), share_repo=sr,
                                                    ds_repo=dr, dash_repo=None, user_repo=_Users())) in (200, 201)
 
@@ -184,6 +185,16 @@ def test_paylasim_bilinmeyen_alici_404():
                               grantee_id="hayalet", permission="read")
     assert _status(lambda: shares_api.create_share(body, current=_u("owner"), share_repo=sr,
                                                    ds_repo=dr, dash_repo=None, user_repo=_Users())) == 404
+
+
+def test_rol_alicisina_yazma_izni_verilemez():
+    """Rol paylaşımı yalnız okuma olabilir; yazma yalnız tek tek kullanıcıya verilir."""
+    try:
+        shares_api.ShareIn(resource_type="dataset", resource_id="d1", grantee_type="role",
+                           grantee_id="viewer", permission="write")
+    except Exception:
+        return
+    raise AssertionError("rol alıcısına write izni kabul edildi")
 
 
 def test_gecersiz_izin_ve_rol_reddedilir():

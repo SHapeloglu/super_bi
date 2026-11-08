@@ -23,10 +23,13 @@ class ShareIn(BaseModel):
     permission:    Literal["read", "write"]
 
     @model_validator(mode="after")
-    def _rol_gecerli_mi(self):
-        """Rol alıcısıysa grantee_id tanımlı rollerden biri olmalı."""
-        if self.grantee_type == "role" and self.grantee_id not in ROLES:
-            raise ValueError("Geçersiz rol")
+    def _rol_kurallari(self):
+        """Rol alıcısıysa grantee_id tanımlı rollerden biri olmalı ve izin yalnız okuma olabilir."""
+        if self.grantee_type == "role":
+            if self.grantee_id not in ROLES:
+                raise ValueError("Geçersiz rol")
+            if self.permission == "write":
+                raise ValueError("Rol paylaşımı yalnız okuma olabilir; yazma tek tek kullanıcıya verilir")
         return self
 
 
@@ -40,10 +43,9 @@ def _resource_owner(resource_type: str, resource_id: str, ds_repo, dash_repo) ->
 
 
 def _ensure_owner(current, owner_id: Optional[str]) -> None:
-    if owner_id is None:
+    """Sahip ya da admin değilse kaynak yokmuş gibi 404 döner (varlık sızdırılmaz)."""
+    if owner_id is None or (current.role != "admin" and owner_id != current.user_id):
         raise HTTPException(status_code=404, detail="Kaynak bulunamadı")
-    if current.role != "admin" and owner_id != current.user_id:
-        raise HTTPException(status_code=403, detail="Paylaşımı yalnız sahip ya da admin yönetebilir")
 
 
 @router.post("", status_code=201)
