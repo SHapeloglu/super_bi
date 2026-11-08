@@ -68,6 +68,9 @@ export function createApiClient(baseUrl, getToken) {
     // ---- auth ----
     register: (username, password) =>
       request("POST", "/api/auth/register", { username, password }, { noAuth: true }),
+    /** Kayıt açık mı? Döner: { open: boolean }. Kimlik gerektirmez. */
+    registrationStatus: () =>
+      request("GET", "/api/auth/registration", undefined, { noAuth: true }),
     /**
      * Kullanıcı girişi. Başarılıysa sunucu token döndürür (token sonraki isteklerde kullanılır).
      */

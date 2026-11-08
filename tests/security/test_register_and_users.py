@@ -166,6 +166,22 @@ def test_users_route_uygulamaya_bagli():
     assert "post" in paths["/api/users"], "/api/users altında POST yok"
 
 
+def test_kayit_durumu_kapali_sistemde():
+    """Arayüz için: kullanıcı varken ve env kapalıyken kayıt kapalı görünmeli."""
+    with _env(None):
+        assert auth.registration_status(repo=_Repo(n=1)) == {"open": False}
+
+
+def test_kayit_durumu_bootstrapte_acik():
+    with _env(None):
+        assert auth.registration_status(repo=_Repo(n=0)) == {"open": True}
+
+
+def test_kayit_durumu_env_true_acik():
+    with _env("true"):
+        assert auth.registration_status(repo=_Repo(n=5)) == {"open": True}
+
+
 TESTS = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
 
 

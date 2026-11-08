@@ -21,6 +21,19 @@ from app.models.schemas import TokenResponse, UserLogin, UserRegister
 router = APIRouter()
 
 
+def _registration_open(repo: UserRepository) -> bool:
+    """Kayıt açık mı? Boş sistemde (bootstrap) her zaman; aksi halde yalnız DATALENS_ALLOW_REGISTER=true ise."""
+    if repo.count() == 0:
+        return True
+    return os.environ.get("DATALENS_ALLOW_REGISTER", "false").strip().lower() == "true"
+
+
+@router.get("/registration")
+def registration_status(repo: UserRepository = Depends(get_user_repo)):
+    """Arayüz için: kayıt formu gösterilsin mi? Kimlik gerektirmez; yalnız açık/kapalı bilgisi döner."""
+    return {"open": _registration_open(repo)}
+
+
 @router.post("/register", response_model=TokenResponse, status_code=201)
 def register(
     body: UserRegister,
@@ -35,7 +48,7 @@ def register(
     # Faz 0.3: açık kayıt varsayılan olarak kapalı. Sistemde kullanıcı varken yeni kayıt yalnız
     # DATALENS_ALLOW_REGISTER=true ise kabul edilir; yeni kullanıcıyı admin POST /api/users ile ekler.
     # Boş sistemde (bootstrap) ilk kayıt her zaman açıktır.
-    if repo.count() > 0 and os.environ.get("DATALENS_ALLOW_REGISTER", "false").lower() != "true":
+    if not _registration_open(repo):
         raise HTTPException(status_code=403, detail="Kayıt kapalı; kullanıcıyı yönetici oluşturmalı")
 
     try:

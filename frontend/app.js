@@ -257,6 +257,11 @@ function initAuthScreen() {
   });
 
   qs("#logout-btn").addEventListener("click", logout);
+
+  // Faz 0.3: kayıt kapalıysa kayıt sekmesi gizlenir. Durum alınamazsa sekme görünür kalır; sunucu yine de kontrol eder.
+  api.registrationStatus()
+    .then((r) => { if (!r.open) qs("#tab-register").style.display = "none"; })
+    .catch(() => {});
 }
 
 /* ============================================================
