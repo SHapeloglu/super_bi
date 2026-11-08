@@ -183,22 +183,30 @@ class ConnectorRegistry:
         from app.core.host_policy import check_db_host
         check_db_host(host)
 
-        from urllib.parse import quote_plus
-        # Kullanıcı adı ve şifre URL'de sorun çıkarmasın diye kodlanır (ör. '@' veya '/' karakterleri).
-        auth = f"{quote_plus(user)}:{quote_plus(password)}@" if user else ""
-        port_part = f":{port}" if port else ""
-        # Oracle için bağlantı 'service_name' ile kurulur (SID değil).
+        from sqlalchemy.engine import URL
+
+        # Faz 0.5: URL metin birleştirme yerine URL.create — kullanıcı, parola, host ve veritabanı
+        # adı SQLAlchemy tarafından kaçışlanır ('?', '/', '@', ':' değerleri URL'yi bozamaz).
+        # URL nesnesi döner (metne çevrilmez): render_as_string veritabanı yolunu kaçışlamaz.
+        def _mk(drivername: str, database_path: str | None, query: dict | None = None):
+            return URL.create(
+                drivername,
+                username=user or None,
+                password=password or None,
+                host=host,
+                port=int(port) if port else None,
+                database=database_path or None,
+                query=query or {},
+            )
+
+        # Oracle için bağlantı 'service_name' ile kurulur (SID değil); veritabanı adı yol değil sorgu parametresidir.
         if db_type == "oracle":
-            import oracledb
-            from urllib.parse import quote_plus as qp
-            return f"oracle+oracledb://{auth}{host}{port_part}/?service_name={database}"
+            import oracledb  # noqa: F401  (sürücü kurulu olmalı)
+            return _mk("oracle+oracledb", None, {"service_name": database})
         if db_type == "mssql":
-            from urllib.parse import quote_plus as qp
-            # ODBC sürücü adı URL'ye kodlanır. TrustServerCertificate=yes sunucu sertifika kontrolünü kapatır; test ortamında kolaylık sağlar, üretimde risklidir.
-            driver = qp("ODBC Driver 18 for SQL Server")
-            return f"{dialect}://{auth}{host}{port_part}/{database}?driver={driver}&TrustServerCertificate=yes"
-        # DİKKAT: host ve database adı URL'ye kodlanmadan eklenir; bu değerlerde '/', '?' veya '@' varsa adres bozulabilir.
-        return f"{dialect}://{auth}{host}{port_part}/{database}"
+            # TrustServerCertificate=yes sunucu sertifika kontrolünü kapatır (MITM riski). Ayrı bir görevle ele alınacak.
+            return _mk(dialect, database, {"driver": "ODBC Driver 18 for SQL Server", "TrustServerCertificate": "yes"})
+        return _mk(dialect, database)
 
     def remove_engine(self, conn_id: str) -> None:
         """conn_id'nin engine'ini kayıt defterinden çıkarır ve bağlantı havuzunu kapatır (dispose)."""
