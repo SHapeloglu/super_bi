@@ -197,6 +197,11 @@ export function createApiClient(baseUrl, getToken) {
      */
     getDataset: (id) => request("GET", `/api/datasets/${encodeURIComponent(id)}`),
     /**
+     * Kayıtlı veri setini sunucuda çalıştırır (okuma izni yeterli; bağlantı sahibinin kimliğiyle).
+     * body: { fields?: {kolon: rol}, sample, mode }. fields yalnız veri setinin kolonlarından olabilir.
+     */
+    runDataset: (id, body) => request("POST", `/api/datasets/${encodeURIComponent(id)}/run`, body),
+    /**
      * Veri setini id ile siler. Başka widget'lar bu seti kullanıyorsa dikkat edilmeli.
      */
     deleteDataset: (id) => request("DELETE", `/api/datasets/${encodeURIComponent(id)}`),

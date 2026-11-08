@@ -192,9 +192,32 @@ def delete_dataset(
 
 
 class DatasetRunIn(BaseModel):
-    """Veri seti çalıştırma isteği. Yalnız örnek boyutu ve önbellek modu; SQL, tablo ya da bağlantı alınmaz."""
+    """
+    Veri seti çalıştırma isteği. Örnek boyutu, önbellek modu ve (isteğe bağlı) kolon alt kümesi.
+    fields yalnız veri setinin kendi kolonlarından seçilebilir; SQL, tablo ya da bağlantı alınmaz.
+    """
     sample: int = Field(default=100, ge=1, le=100_000)
     mode:   Literal["live", "memory"] = "memory"
+    fields: Optional[dict[str, str]] = None
+
+
+def _resolve_fields(requested: dict, allowed: dict) -> dict:
+    """
+    İstenen kolonları veri setinin kendi kolonlarına eşler. Anahtar tam eşleşirse olduğu gibi,
+    değilse noktalı anahtarın son parçasıyla (tablo.kolon -> kolon) tek eşleşme aranır.
+    Tanımsız ya da belirsiz kolon 400 döner.
+    """
+    out: dict = {}
+    for rk, role in requested.items():
+        if rk in allowed:
+            key = rk
+        else:
+            adaylar = [k for k in allowed if k.split(".")[-1] == rk]
+            if not allowed or len(adaylar) != 1:
+                raise HTTPException(status_code=400, detail="İstenen kolonlar veri setinde tanımlı değil")
+            key = adaylar[0]
+        out[key] = role
+    return out
 
 
 @router.post("/{dataset_id}/run")
@@ -218,6 +241,11 @@ def run_dataset(
     if ds is None or perm is None:
         raise HTTPException(status_code=404, detail="Dataset bulunamadı")
 
+    # Kolon alt kümesi: yalnız veri setinin kendi kolonları istenebilir (kayıtlı olmayan kolon 400).
+    fields = ds.fields
+    if body.fields is not None:
+        fields = _resolve_fields(body.fields, ds.fields)
+
     # Bağlantı sahibinin kendi kimliği ile açılır; alıcının bağlantı erişimi yoktur.
     owner = SimpleNamespace(user_id=ds.owner_id, role="viewer")
     engine, meta = resolve_connection_engine(ds.conn_id, owner, registry, conn_repo)
@@ -225,7 +253,7 @@ def run_dataset(
     try:
         sql, params = sql_builder.build(
             base_table=ds.base_table,
-            fields=ds.fields,
+            fields=fields,
             joins=[JoinDef(**j) for j in ds.joins],
             filters=[FilterDef(**f) for f in ds.filters],
             group_by=ds.group_by,

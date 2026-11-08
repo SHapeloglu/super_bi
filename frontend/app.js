@@ -1851,14 +1851,21 @@ async function resolveQueryBase(config) {
  * Neden 1 satır: Kolon adları için tüm veriyi çekmeye gerek yoktur.
  */
 async function fetchDatasetColumns(datasetId) {
-  const ds = await api.getDataset(datasetId);
-  const res = await api.runQuery({
-    conn_id: ds.conn_id, base_table: ds.base_table,
-    fields: ds.fields || {}, joins: ds.joins || [], filters: ds.filters || [],
-    group_by: ds.group_by || [], order_by: ds.order_by || [],
-    sample: 1, commit: false, mode: "memory",
-  });
+  const res = await api.runDataset(datasetId, { sample: 1, mode: "memory" });
   return res.columns;
+}
+
+/**
+ * Widget veri çekme yolu. Veri seti bağlıysa sunucunun /run uç noktası kullanılır: bağlantı veri setinin
+ * sahibi kimliğiyle açılır, alıcının bağlantı erişimi gerekmez. Değilse doğrudan sorgu çalışır.
+ * fields: widget'ın istediği kolonlar (veri setinde tanımlı olmalı).
+ */
+async function runWidgetQuery(config, fields, sample) {
+  if (config.datasetId) {
+    return api.runDataset(config.datasetId, { fields, sample, mode: "memory" });
+  }
+  const base = await resolveQueryBase(config);
+  return api.runQuery({ ...base, fields, sample, commit: false, mode: "memory" });
 }
 
 /**
@@ -1867,12 +1874,10 @@ async function fetchDatasetColumns(datasetId) {
  * Dönüş: { labels, values, rawRows, rawCols }.
  */
 async function fetchWidgetData(config) {
-  const base = await resolveQueryBase(config);
   const fields = {};
   fields[config.labelCol] = "dim";
   fields[config.valueCol] = "dim";
-  const body = { ...base, fields, sample: 500, commit: false, mode: "memory" };
-  const res = await api.runQuery(body);
+  const res = await runWidgetQuery(config, fields, 500);
   const labelIdx = res.columns.indexOf(config.labelCol);
   const valueIdx = res.columns.indexOf(config.valueCol);
   // Etiketler metne, değerler sayıya çevrilir. Sayıya çevrilemeyen değerler (metin, boş) 0 olur; bu yüzden değer kolonu beklenen sayısal tipte olmalıdır.
@@ -1916,13 +1921,11 @@ function getValueCols(config) {
  * DİKKAT: Burada da sunucu en fazla 500 satır döner.
  */
 async function fetchMultiSeriesData(config) {
-  const base = await resolveQueryBase(config);
   const valueCols = getValueCols(config);
   const fields = {};
   fields[config.labelCol] = "dim";
   for (const vc of valueCols) fields[vc] = "dim";
-  const body = { ...base, fields, sample: 500, commit: false, mode: "memory" };
-  const res = await api.runQuery(body);
+  const res = await runWidgetQuery(config, fields, 500);
 
   const labelIdx = res.columns.indexOf(config.labelCol);
   const valueIdxs = valueCols.map((vc) => res.columns.indexOf(vc));
@@ -1957,14 +1960,12 @@ async function fetchMultiSeriesData(config) {
  * Tablo ve matris widget'ları için ham satırları çeker (en fazla 200 satır). Dönüş: { rawRows, rawCols }. Toplama yapılmaz; kolon listesi config.columns ile belirlenir.
  */
 async function fetchTableData(config) {
-  const base = await resolveQueryBase(config);
   const columns = config.columns && config.columns.length ? config.columns : null;
   const fields = {};
   if (columns) {
     for (const c of columns) fields[c] = "dim";
   }
-  const body = { ...base, fields, sample: 200, commit: false, mode: "memory" };
-  const res = await api.runQuery(body);
+  const res = await runWidgetQuery(config, fields, 200);
   return { rawRows: res.rows, rawCols: res.columns };
 }
 

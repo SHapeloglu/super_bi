@@ -115,6 +115,54 @@ def test_sample_siniri():
     raise AssertionError("sample=0 kabul edildi")
 
 
+def _setup_iki_kolon():
+    store = SQLiteStore(":memory:")
+    dr = DatasetRepository(store)
+    sr = ShareRepository(store)
+    dr.save(Dataset(dataset_id="d2", name="İki kolon", conn_id="c1", base_table="sales",
+                    owner_id="owner", fields={"id": "id", "tutar": "tutar"}))
+    sr.create("dataset", "d2", "user", "other", "read", created_by="owner")
+    return dr, sr
+
+
+def test_alt_kume_kolon_secimi_sorguya_yansir():
+    """Widget yalnız seçtiği kolonları ister; sunucu SQL'e yalnız onları yazar."""
+    dr, sr = _setup_iki_kolon()
+    ex, calls = _Exec(), []
+    _patch_engine(calls)
+    body = ds_api.DatasetRunIn(sample=10, fields={"id": "dim"})
+    ds_api.run_dataset("d2", body, current=_u("other"), repo=dr, shares=sr,
+                       registry=None, conn_repo=None, executor=ex)
+    sql = ex.calls[-1]["sql"]
+    assert "id" in sql and "tutar" not in sql, sql
+
+
+def test_veri_setinde_olmayan_kolon_400():
+    dr, sr = _setup_iki_kolon()
+    ex, calls = _Exec(), []
+    _patch_engine(calls)
+    body = ds_api.DatasetRunIn(sample=10, fields={"gizli_kolon": "dim"})
+    assert _status(lambda: ds_api.run_dataset("d2", body, current=_u("other"), repo=dr, shares=sr,
+                                              registry=None, conn_repo=None, executor=ex)) == 400
+    assert ex.calls == [], "geçersiz kolonla sorgu çalıştı"
+
+
+def test_noktali_anahtar_cıplak_kolon_adiyla_eslesir():
+    """Veri seti 'orders.id' gibi noktalı anahtar tutar; sonuç kolonu 'id' olarak gelir. Eşleşmeli."""
+    store = SQLiteStore(":memory:")
+    dr = DatasetRepository(store); sr = ShareRepository(store)
+    dr.save(Dataset(dataset_id="d3", name="Noktalı", conn_id="c1", base_table="orders",
+                    owner_id="owner", fields={"orders.id": "dim", "orders.tutar": "dim"}))
+    sr.create("dataset", "d3", "user", "other", "read", created_by="owner")
+    ex, calls = _Exec(), []
+    _patch_engine(calls)
+    body = ds_api.DatasetRunIn(sample=10, fields={"id": "dim"})
+    ds_api.run_dataset("d3", body, current=_u("other"), repo=dr, shares=sr,
+                       registry=None, conn_repo=None, executor=ex)
+    sql = ex.calls[-1]["sql"]
+    assert "orders" in sql and "id" in sql and "tutar" not in sql, sql
+
+
 TESTS = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
 
 
