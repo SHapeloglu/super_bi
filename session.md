@@ -99,3 +99,21 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - Viewer'lar UI'da bağlantı oluşturma/silme butonlarını görmeye devam eder; 403 alırlar. UI gizleme ayrı iş.
 - Viewer olarak sahip olunan eski bağlantıları artık yalnız admin silebilir.
 - 0.4 (SSRF, ham hata metni) ve 0.3, 0.5, 0.6 bu branch'te yok.
+
+## 2026-11-08 — Faz 0.3–0.6 (güvenlik) — branch zinciri: fix/register-closed → fix/host-and-errors
+
+**Değişenler:**
+- 0.3: Açık kayıt kapalı (DATALENS_ALLOW_REGISTER=true ile açılır; boş sistemde bootstrap açık). Yeni POST /api/users yalnız admin (rol admin|viewer).
+- 0.4: app/core/host_policy.py — loopback, link-local (169.254.169.254), unspecified, multicast, reserved reddedilir. DATALENS_ALLOWED_DB_HOSTS tanımlıysa yalnız listedeki hostlar. Bağlantı hataları sabit mesajla döner; ham metin logda.
+- 0.5: Bağlantı URL'si URL.create ile kurulur (escape). URL nesnesi create_engine'e verilir.
+- 0.6: startup_check.py — DATALENS_JWT_SECRET, DATALENS_DB_ENCRYPTION_KEY, DATALENS_DB zorunlu; lifespan başta kontrol eder. crypto ve jwt rastgele anahtar üretmez. /tmp varsayılanı kaldırıldı.
+- tests/security/run_all.sh: tüm güvenlik ve yetki testleri (pytest gerekmez).
+
+**Testler:** 43 güvenlik + 6 yetki testi geçiyor. Her madde için önce kırmızı görüldü.
+
+**Açık / dikkat:**
+- Canlı kayıtlı bağlantıların 4 tanesi host=127.0.0.1 (mssql, mysql, oracle, postgresql), 1 tanesi host boş. Konteynerden bu portlar kapalı; kayıtlar zaten çalışmıyor. Host politikası bunları reddeder.
+- Arayüzdeki kayıt formu (app.js) kayıt kapalıyken 403 alır. Form gizlenmeli ya da kayıt durumu endpoint'i eklenmeli.
+- MSSQL bağlantısında TrustServerCertificate=yes sabit (MITM riski) — ayrı görev.
+- 0.6 deploy edilirse .env'de DATALENS_ALLOWED_DB_HOSTS tanımlanmalı (önerilen: postgres-ortak,mysql-ortak).
+- Faz 0.7 maddesi: pytest yerine düz Python testleri + run_all.sh.
