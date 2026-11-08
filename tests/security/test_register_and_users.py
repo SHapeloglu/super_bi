@@ -26,6 +26,9 @@ from pydantic import ValidationError  # noqa: E402
 from app.api import auth  # noqa: E402
 from app.api import users  # noqa: E402
 
+# Faz 0.6: JWT secret zorunlu; kayıt testleri gerçek token ürettiği için yalnız test süreci için tanımlanır.
+os.environ.setdefault("DATALENS_JWT_SECRET", "yalnizca-test-icin-sir")
+
 
 class _Repo:
     """UserRepository taklidi: count ve create."""

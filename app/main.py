@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth.user_repository import UserRepository
 from app.core.connector_registry import ConnectorRegistry
+from app.core.startup_check import check_required_env
 from app.core.repository import (
     ConnectionRepository,
     DashboardRepository,
@@ -27,8 +28,8 @@ from app.services.query_executor import QueryExecutor
 
 logger = logging.getLogger(__name__)
 
-# Veritabanı dosya yolu ortam değişkeninden okunur; yoksa /tmp altındaki dosya kullanılır. DİKKAT: /tmp yeniden başlatmada silinebilir; gerçek kurulumda DATALENS_DB ayarlanmalı.
-DATALENS_DB = os.environ.get("DATALENS_DB", "/tmp/datalens.db")
+# Veritabanı dosya yolu ortam değişkeninden okunur. Faz 0.6: varsayılan yok; tanımsızsa açılış durur (bkz. startup_check).
+DATALENS_DB = os.environ.get("DATALENS_DB", "")
 
 # CORS origin'leri env'den okunur; verilmezse geliştirme varsayılanları kullanılır.
 _default_origins = "http://localhost:3000,http://localhost:5173"
@@ -46,7 +47,9 @@ async def lifespan(app: FastAPI):
     Açılışta SQLite deposu, repository'ler ve sorgu çalıştırıcı oluşturulup app.state'e konur.
     Kapanışta dış bağlantı havuzları ve veritabanı bağlantısı kapatılır.
     """
-    store = SQLiteStore(DATALENS_DB)           # tek SQLite bağlantısı
+    # Faz 0.6: zorunlu sırlar yoksa veritabanı açılmadan önce dur.
+    check_required_env()
+    store = SQLiteStore(os.environ.get("DATALENS_DB", ""))  # tek SQLite bağlantısı (değer check_required_env ile doğrulandı)
 
     app.state.store     = store
     app.state.registry  = ConnectorRegistry()
