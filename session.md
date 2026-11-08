@@ -82,3 +82,20 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 **Sıradaki adım:**
 - Güvenlik maddelerinin (🔴) düzeltilmesi, ayrı oturumda ve kullanıcı onayıyla.
 - Commit/temizlik kararı.
+
+## 2026-11-08 — Faz 0.1 + 0.2 (güvenlik) — branch fix/security-sqlite-roles
+
+**Değişenler:**
+- `app/core/sqlite_policy.py` (yeni): SQLite yolu yalnızca DATALENS_SQLITE_ROOT altında, var olan, metadata olmayan dosyalara izin verir; salt okunur (mode=ro) açılır. Root tanımsızsa SQLite kapalı.
+- `connector_registry._build_url`: sqlite dalı politikadan geçiyor (reconnect dahil).
+- `api/connections.py`: POST ve DELETE artık yalnız admin (require_role). Silme sahip kontrolü kaldırıldı (plan gereği).
+
+**Testler:** tests/security/test_sqlite_and_roles.py — 11/11 (önce 0/11 kırmızı görüldü). tests/test_yetki.py 6/6.
+
+**Veri:** Canlı DB'de SQLite bağlantısı yok; mevcut kayıtlar etkilenmez. Yedek: /root/yedekler/superbi.db.bak-20261108-0953
+
+**Kalan risk / açık:**
+- Canlı imaj eski; değişiklik deploy edilene kadar yürürlükte değil (onay bekliyor).
+- Viewer'lar UI'da bağlantı oluşturma/silme butonlarını görmeye devam eder; 403 alırlar. UI gizleme ayrı iş.
+- Viewer olarak sahip olunan eski bağlantıları artık yalnız admin silebilir.
+- 0.4 (SSRF, ham hata metni) ve 0.3, 0.5, 0.6 bu branch'te yok.

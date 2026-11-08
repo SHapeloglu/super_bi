@@ -9,7 +9,7 @@ from sqlalchemy import text
 from app.core.connector_registry import ConnectorRegistry
 from app.core.repository import ConnectionMeta, ConnectionRepository
 from app.core.crypto import encrypt_password
-from app.deps import get_registry, get_repo, get_current_user, resolve_connection_engine
+from app.deps import get_registry, get_repo, get_current_user, require_role, resolve_connection_engine
 from app.models.schemas import ConnectionParams, ConnectionResponse, ConnectionTest
 
 router = APIRouter()
@@ -18,7 +18,8 @@ router = APIRouter()
 @router.post("", response_model=ConnectionResponse)
 def create_connection(
     params:   ConnectionParams,
-    current                       = Depends(get_current_user),
+    # Faz 0.2: bağlantı oluşturmak yalnız admin işi (viewer SQLite/ağ erişimi açamaz).
+    current                       = Depends(require_role("admin")),
     registry: ConnectorRegistry    = Depends(get_registry),
     repo:     ConnectionRepository = Depends(get_repo),
 ):
@@ -118,19 +119,16 @@ def list_connections(
 @router.delete("/{conn_id}")
 def delete_connection(
     conn_id:  str,
-    current                    = Depends(get_current_user),
+    # Faz 0.2: silme de yalnız admin (sahip olsa bile viewer silemez).
+    current                    = Depends(require_role("admin")),
     registry: ConnectorRegistry    = Depends(get_registry),
     repo:     ConnectionRepository = Depends(get_repo),
 ):
-    # Admin herhangi bir bağlantıyı silebilir; diğerleri yalnız kendininkini.
     """
-    Bağlantıyı siler. Admin herkesinkini, diğer kullanıcılar sadece kendininkini silebilir. Bulunamazsa 404 döner.
+    Bağlantıyı siler. Yalnız admin yapabilir. Bulunamazsa 404 döner.
     Silinince bellekteki engine de kapatılır.
     """
-    if current.role == "admin":
-        deleted = repo.delete(conn_id)
-    else:
-        deleted = repo.delete_owned(conn_id, current.user_id)
+    deleted = repo.delete(conn_id)
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Bağlantı bulunamadı")
