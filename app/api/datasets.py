@@ -110,8 +110,11 @@ def update_dataset(
     # Güncellemede sahip korunur: paylaşılan kaydı düzenlemek sahipliği değiştirmez.
     owner_id = existing.owner_id
 
-    # Güncellemede yeni seçilen bağlantının da kullanıcıya ait olduğu kontrol edilir.
-    _check_conn_ownership(body.conn_id, current, conn_repo)
+    # Bağlantı değişiyorsa yeni bağlantının kullanıcıya ait olduğu kontrol edilir.
+    # Aynı bağlantı korunuyorsa kontrol yapılmaz: yazma paylaşımı alan kullanıcı sahibin bağlantısını
+    # değiştirmeden veri setini düzenleyebilmeli.
+    if body.conn_id != existing.conn_id:
+        _check_conn_ownership(body.conn_id, current, conn_repo)
 
     ds = Dataset(
         dataset_id=dataset_id, owner_id=owner_id, name=body.name,

@@ -202,6 +202,31 @@ def test_gecersiz_izin_ve_rol_reddedilir():
     raise AssertionError("geçersiz izin kabul edildi")
 
 
+class _YokBaglanti:
+    """ConnectionRepository taklidi: kullanıcıya ait olmayan bağlantı yok."""
+    def get_owned_or_raise(self, conn_id, user_id):
+        raise KeyError(conn_id)
+
+
+def test_dataset_yazma_paylasimi_ayni_baglantiyla_gunceller():
+    _, dr, _, sr = _setup()
+    _mk_dataset(dr)  # conn_id = c1 (sahibin bağlantısı)
+    sr.create("dataset", "d1", "user", "other", "write", created_by="owner")
+    body = ds_api.DatasetIn(name="Yeni", conn_id="c1", base_table="sales")
+    assert _status(lambda: ds_api.update_dataset("d1", body, current=_u("other"), repo=dr,
+                                                 conn_repo=_YokBaglanti(), shares=sr)) == 200
+    assert dr.get("d1").owner_id == "owner"
+
+
+def test_dataset_baglanti_degisince_sahiplik_kontrolu_yapilir():
+    _, dr, _, sr = _setup()
+    _mk_dataset(dr)
+    sr.create("dataset", "d1", "user", "other", "write", created_by="owner")
+    body = ds_api.DatasetIn(name="Yeni", conn_id="c9", base_table="sales")
+    assert _status(lambda: ds_api.update_dataset("d1", body, current=_u("other"), repo=dr,
+                                                 conn_repo=_YokBaglanti(), shares=sr)) == 404
+
+
 TESTS = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
 
 
