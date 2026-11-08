@@ -12,11 +12,18 @@ gerek kalmaz.
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
+from types import SimpleNamespace
+
+from pydantic import Field
 
 from app.core.repository import Dataset, DatasetRepository, ConnectionRepository
-from app.deps import get_dataset_repo, get_repo, get_current_user, get_share_repo
+from app.deps import get_dataset_repo, get_repo, get_current_user, get_share_repo, get_registry, get_executor, resolve_connection_engine
 from app.core.sharing import ShareRepository, effective_permission, allows
+from app.core.connector_registry import ConnectorRegistry
+from app.models.schemas import JoinDef, FilterDef
+from app.services.sql_builder import sql_builder
+from app.services.query_executor import QueryExecutor
 
 router = APIRouter()
 
@@ -182,3 +189,57 @@ def delete_dataset(
     repo.delete(dataset_id)
     shares.delete_for_resource("dataset", dataset_id)
     return {"msg": f"{dataset_id} silindi"}
+
+
+class DatasetRunIn(BaseModel):
+    """Veri seti çalıştırma isteği. Yalnız örnek boyutu ve önbellek modu; SQL, tablo ya da bağlantı alınmaz."""
+    sample: int = Field(default=100, ge=1, le=100_000)
+    mode:   Literal["live", "memory"] = "memory"
+
+
+@router.post("/{dataset_id}/run")
+def run_dataset(
+    dataset_id: str,
+    body: DatasetRunIn,
+    current = Depends(get_current_user),
+    repo: DatasetRepository = Depends(get_dataset_repo),
+    shares: ShareRepository = Depends(get_share_repo),
+    registry: ConnectorRegistry = Depends(get_registry),
+    conn_repo: ConnectionRepository = Depends(get_repo),
+    executor: QueryExecutor = Depends(get_executor),
+):
+    """
+    Kayıtlı veri setini çalıştırır. Okuma izni olan herkes çalıştırabilir; bağlantı VERİ SETİNİN SAHİBİ
+    kimliğiyle açılır (bağlantı sahibine aittir). Sorguyu yalnız kayıtlı tanım üretir.
+    Erişim yoksa 404. Önbellek kullanıcıya özeldir (çalıştıran kullanıcının kimliğiyle).
+    """
+    ds = repo.get(dataset_id)
+    perm = perm_of(dataset_id, ds.owner_id if ds else None, current, shares)
+    if ds is None or perm is None:
+        raise HTTPException(status_code=404, detail="Dataset bulunamadı")
+
+    # Bağlantı sahibinin kendi kimliği ile açılır; alıcının bağlantı erişimi yoktur.
+    owner = SimpleNamespace(user_id=ds.owner_id, role="viewer")
+    engine, meta = resolve_connection_engine(ds.conn_id, owner, registry, conn_repo)
+
+    try:
+        sql, params = sql_builder.build(
+            base_table=ds.base_table,
+            fields=ds.fields,
+            joins=[JoinDef(**j) for j in ds.joins],
+            filters=[FilterDef(**f) for f in ds.filters],
+            group_by=ds.group_by,
+            order_by=ds.order_by,
+            limit=body.sample,
+            offset=0,
+            db_type=meta.db_type,
+        )
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return executor.execute(
+        engine=engine, sql=sql, params=params, sample=body.sample,
+        commit=False, mode=body.mode,
+        user_id=current.user_id,   # önbellek ve kayıt çalıştıran kullanıcıya ait
+        conn_id=meta.conn_id,
+    )
