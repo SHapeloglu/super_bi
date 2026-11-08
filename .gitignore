@@ -12,3 +12,4 @@ odoo_test
 *.bak[0-9]*
 *.bak_*
 *.zip
+.env

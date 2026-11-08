@@ -1,0 +1,8 @@
+venv
+data
+backups
+frontend
+docs
+.git
+*.db
+*.gz
