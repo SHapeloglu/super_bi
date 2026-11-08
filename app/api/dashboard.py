@@ -1,5 +1,6 @@
-"""
-/api/dashboards — auth bağlı, owner_id kontrollü
+"""/api/dashboards — dashboard (rapor sayfası) uç noktaları.
+Admin tüm dashboard'ları görebilir; diğer kullanıcılar sadece kendininkileri.
+Veri katmanı: app.core.repository.DashboardRepository. Kimlik: app.deps.get_current_user.
 """
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +14,7 @@ router = APIRouter()
 
 
 class DashboardObjIn(BaseModel):
+    """Frontend'den gelen tek bir grafik objesi. x, y, w, h değerleri mm cinsinden konum ve boyuttur."""
     id:       str
     type:     str
     x:        float
@@ -20,12 +22,16 @@ class DashboardObjIn(BaseModel):
     w:        float
     h:        float
     title:    str             = ""
+    # Bu grafiğin bağlı olduğu sorgunun (dataset) kimliği. Bağlı değilse boş kalır.
     query_id: Optional[str]  = None
+    # Varsayılan grafik rengi: mavi (hex kodu).
     color:    str             = "#378ADD"
 
 
 class DashboardIn(BaseModel):
+    """Dashboard oluşturma / güncelleme isteği: ad, sayfa boyutu ve grafik objeleri listesi."""
     name:      str
+    # Sayfa boyutu adı; a4l = A4 yatay (297 x 210 mm).
     scale:     str   = "a4l"
     page_w_mm: float = 297.0
     page_h_mm: float = 210.0
@@ -38,10 +44,16 @@ def create_dashboard(
     current = Depends(get_current_user),
     repo: DashboardRepository = Depends(get_dash_repo),
 ):
+    """
+    Yeni dashboard oluşturur (201). Kimlik olarak UUID'nin ilk 8 karakteri kullanılır.
+    Dönüş: dashboard_id, ad ve mesaj.
+    """
+    # Kısa, URL'de rahat kullanılan kimlik (8 karakter). Çakışma olasılığı düşüktür ama sıfır değildir.
     dash_id = str(uuid.uuid4())[:8]
     dash = Dashboard(
         dashboard_id=dash_id, owner_id=current.user_id, name=body.name,
         scale=body.scale, page_w_mm=body.page_w_mm, page_h_mm=body.page_h_mm,
+        # Gelen istek modelleri (DashboardObjIn) iç veri modeline (DashboardObj) çevrilir.
         objects=[DashboardObj(**o.model_dump()) for o in body.objects],
     )
     repo.save(dash)
@@ -56,9 +68,14 @@ def update_dashboard(
     repo: DashboardRepository = Depends(get_dash_repo),
 ):
     # Sahiplik kontrolü
+    """
+    Var olan dashboard'u günceller. Admin herkesinkini, diğer kullanıcılar sadece kendininkini güncelleyebilir.
+    Yetki yoksa ya da kayıt yoksa 404 döner.
+    """
     try:
         if current.role == "admin":
             existing = repo.get(dashboard_id)
+            # Kayıt yoksa KeyError fırlatılır; aşağıdaki except bloğu bunu 404'e çevirir.
             if not existing: raise KeyError
         else:
             repo.get_owned_or_raise(dashboard_id, current.user_id)
@@ -79,6 +96,8 @@ def list_dashboards(
     current = Depends(get_current_user),
     repo: DashboardRepository = Depends(get_dash_repo),
 ):
+    """Dashboard listesini döner. Admin tümünü, diğer kullanıcılar sadece kendininkileri görür. Objeler listede yer almaz."""
+    # Admin için owner None verilir: filtre uygulanmaz, tüm dashboard'lar gelir.
     owner = None if current.role == "admin" else current.user_id
     return [
         {"dashboard_id": d.dashboard_id, "owner_id": d.owner_id, "name": d.name,
@@ -93,6 +112,7 @@ def get_dashboard(
     current = Depends(get_current_user),
     repo: DashboardRepository = Depends(get_dash_repo),
 ):
+    """Tek bir dashboard'u grafik objeleriyle birlikte döner. Yetki yoksa ya da kayıt yoksa 404 döner."""
     try:
         if current.role == "admin":
             dash = repo.get(dashboard_id)
@@ -112,6 +132,8 @@ def delete_dashboard(
     current = Depends(get_current_user),
     repo: DashboardRepository = Depends(get_dash_repo),
 ):
+    """Dashboard'u siler. Admin herkesinkini, diğer kullanıcılar sadece kendininkini silebilir. Silinemezse 404 döner."""
+    # Admin tüm dashboard'ları silebilir; diğerleri için sahiplik kontrollü silme yapılır.
     if current.role == "admin":
         deleted = repo.delete(dashboard_id)
     else:

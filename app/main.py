@@ -27,6 +27,7 @@ from app.services.query_executor import QueryExecutor
 
 logger = logging.getLogger(__name__)
 
+# Veritabanı dosya yolu ortam değişkeninden okunur; yoksa /tmp altındaki dosya kullanılır. DİKKAT: /tmp yeniden başlatmada silinebilir; gerçek kurulumda DATALENS_DB ayarlanmalı.
 DATALENS_DB = os.environ.get("DATALENS_DB", "/tmp/datalens.db")
 
 # CORS origin'leri env'den okunur; verilmezse geliştirme varsayılanları kullanılır.
@@ -40,6 +41,11 @@ CORS_ORIGINS = [
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Başlangıç ──────────────────────────────────────────────────
+    """
+    Uygulama açılış ve kapanış işlerini yönetir.
+    Açılışta SQLite deposu, repository'ler ve sorgu çalıştırıcı oluşturulup app.state'e konur.
+    Kapanışta dış bağlantı havuzları ve veritabanı bağlantısı kapatılır.
+    """
     store = SQLiteStore(DATALENS_DB)           # tek SQLite bağlantısı
 
     app.state.store     = store
@@ -55,6 +61,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # ── Kapanış ────────────────────────────────────────────────────
+    # Kapanışta önce tüm dış veritabanı bağlantıları, sonra SQLite kapatılır.
     app.state.registry.dispose_all()
     app.state.store.close()
     logger.info("DataLens kapatıldı")
@@ -67,6 +74,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS: tarayıcının erişebileceği adresler. allow_credentials=True olduğu için origin listesi dar tutulmalı.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -80,6 +88,7 @@ app.add_middleware(
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_handler(request: Request, exc: SQLAlchemyError):
+    """SQLAlchemy (veritabanı) hatalarını yakalar. Ayrıntı kullanıcıya gösterilmez; log'a yazılır ve genel 500 cevabı döner."""
     logger.error("SQLAlchemyError %s: %s", request.url, exc, exc_info=True)
     return JSONResponse(
         status_code=500,
@@ -89,6 +98,7 @@ async def sqlalchemy_handler(request: Request, exc: SQLAlchemyError):
 
 @app.exception_handler(Exception)
 async def generic_handler(request: Request, exc: Exception):
+    """Yakalanmayan diğer tüm hatalar için genel 500 cevabı döner. Asıl hata log'da kalır, kullanıcıya gösterilmez."""
     logger.error("Unhandled %s: %s", request.url, exc, exc_info=True)
     return JSONResponse(
         status_code=500,
@@ -98,6 +108,7 @@ async def generic_handler(request: Request, exc: Exception):
 
 # ── Router'lar ──────────────────────────────────────────────────────
 
+# Router modülleri burada import edilir. E402 uyarısı (import yeri) bilerek bastırılmıştır.
 from app.api import auth, connections, drivers, schema, query, dashboard, history, datasets, analyze  # noqa: E402
 
 app.include_router(auth.router,        prefix="/api/auth",       tags=["auth"])
@@ -113,8 +124,8 @@ app.include_router(analyze.router,     prefix="/api/analyze",    tags=["analyze"
 
 @app.get("/api/health", tags=["health"])
 def health():
+    """Servis sağlık kontrolü (/api/health). Servisin çalıştığını ve sürümünü döner. Veritabanı yolu dışarı verilmez."""
     return {
         "status":  "ok",
         "version": "0.2.0",
-        "db":      DATALENS_DB,
     }

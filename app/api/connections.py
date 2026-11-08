@@ -1,5 +1,6 @@
-"""
-/api/connections — auth bağlı, owner_id kontrollü
+"""/api/connections — veritabanı bağlantısı oluşturma, test etme, listeleme ve silme.
+Şifre yalnız şifreli hali ile saklanır (app.core.crypto). Canlı engine app.core.connector_registry'de tutulur.
+Kimlik ve sahiplik kontrolleri app.deps'te yapılır.
 """
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,36 +22,47 @@ def create_connection(
     registry: ConnectorRegistry    = Depends(get_registry),
     repo:     ConnectionRepository = Depends(get_repo),
 ):
+    # Sürücü kurulu değilse 409 döner; istemci /api/drivers/.../install ile kurulum isteyebilir.
+    """
+    Yeni veritabanı bağlantısı oluşturur (201 değil, varsayılan 200). Sürücü kurulu değilse 409, bağlantı testi başarısızsa 400 döner.
+    Başarılıysa bağlantı bilgileri kaydedilir; şifre yalnız şifreli hali ile yazılır. Dönüş: conn_id ve durum.
+    """
     if not registry.driver_installed(params.db_type):
         raise HTTPException(status_code=409, detail={
             "msg":    f"{params.db_type} driver kurulu değil",
             "action": f"POST /api/drivers/{params.db_type}/install",
         })
 
+    # Bağlantı kimliği: UUID'nin ilk 8 karakteri.
     conn_id = str(uuid.uuid4())[:8]
     raw_params = {
         "host":        params.host,
         "port":        params.port,
         "database":    params.database,
         "user":        params.user,
+        # Şifre bu aşamada yalnız test ve bağlantı kurmak için düz metin kullanılır; kalıcı kayda düz metin yazılmaz.
         "password":    params.get_password(),
         "schema_name": params.schema_name,
     }
 
+    # Engine kurulur ve test edilir. Kurulum sırasındaki hatalar 400 olarak döner.
     try:
         engine = registry.get_engine(conn_id, params.db_type, raw_params)
         ok, msg = registry.test_connection(engine)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Test başarısızsa geçici engine kapatılır ve hiçbir kayıt yapılmaz.
     if not ok:
         registry.remove_engine(conn_id)
         raise HTTPException(status_code=400, detail=msg)
 
+    # Bağlantı başarılıysa yalnız metadata kaydedilir.
     repo.save(ConnectionMeta(
         conn_id=conn_id, owner_id=current.user_id,
         db_type=params.db_type, host=params.host, database=params.database,
         port=params.port, user=params.user,
+        # Şifre şifrelenerek saklanır (bkz. app/core/crypto.py).
         password_enc=encrypt_password(params.get_password()),
         schema_name=params.schema_name,
     ))
@@ -72,6 +84,10 @@ def test_connection(
     # resolve_connection_engine artık şifrelenmiş şifreyle otomatik yeniden
     # bağlanmayı deniyor (bkz. deps.py) — bu yüzden burada artık "engine
     # yoksa 410" demek yerine, önce yeniden bağlanmayı deniyoruz.
+    """
+    Kayıtlı bir bağlantının canlı testini yapar ve gecikme süresini milisaniye olarak döner.
+    Test başarılıysa son kullanım zamanı güncellenir.
+    """
     engine, meta = resolve_connection_engine(conn_id, current, registry, repo)
 
     import time
@@ -79,6 +95,7 @@ def test_connection(
     ok, msg = registry.test_connection(engine)
     ms = (time.perf_counter() - t0) * 1000
     if ok:
+        # Başarılı testte son kullanım zamanı güncellenir.
         repo.touch(conn_id)
     return ConnectionTest(success=ok, message=msg, latency_ms=round(ms, 2))
 
@@ -105,6 +122,11 @@ def delete_connection(
     registry: ConnectorRegistry    = Depends(get_registry),
     repo:     ConnectionRepository = Depends(get_repo),
 ):
+    # Admin herhangi bir bağlantıyı silebilir; diğerleri yalnız kendininkini.
+    """
+    Bağlantıyı siler. Admin herkesinkini, diğer kullanıcılar sadece kendininkini silebilir. Bulunamazsa 404 döner.
+    Silinince bellekteki engine de kapatılır.
+    """
     if current.role == "admin":
         deleted = repo.delete(conn_id)
     else:
@@ -113,5 +135,6 @@ def delete_connection(
     if not deleted:
         raise HTTPException(status_code=404, detail="Bağlantı bulunamadı")
 
+    # Kayıt silindikten sonra bellekteki bağlantı havuzu da kapatılır.
     registry.remove_engine(conn_id)
     return {"msg": f"{conn_id} silindi"}

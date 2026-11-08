@@ -6,6 +6,7 @@ dolaylı izolasyon sağlanır (kullanıcı sadece kendi conn_id'lerini görebili
 get_connection_engine zaten bunu kontrol ediyor). add_history conn_id
 sahiplik kontrolü yapmaz çünkü /api/query/run zaten kontrol etmiş olur.
 """
+# TODO(kontrol): Üstteki docstring 'add_history sahiplik kontrolü yapmaz' diyor; ama add_history aslında _check_conn_access çağırıyor. Docstring güncel olmayabilir.
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -18,6 +19,10 @@ router = APIRouter()
 
 
 class HistoryAddRequest(BaseModel):
+    """
+    Sorgu geçmişine yeni kayıt eklemek için gelen istek.
+    fingerprint: sorgu grubunu belirleyen parmak izi. sample ve mode: çalıştırma ayarları.
+    """
     fingerprint:  str
     conn_id:      str
     conn_name:    str     = ""
@@ -52,7 +57,12 @@ def add_history(
     repo:    QueryHistoryRepository = Depends(get_hist_repo),
     cn_repo: ConnectionRepository   = Depends(get_repo),
 ):
+    """
+    Bir sorgu çalıştırmasını geçmişe ekler (201). Bağlantıya erişimi olmayan kullanıcı 404 alır.
+    Dönüş: yeni kaydın id'si ve fingerprint.
+    """
     _check_conn_access(body.conn_id, current, cn_repo)
+    # Versiyon kimliği: UUID'nin ilk 12 karakteri. Gelen alanlar QueryVersion'a aktarılır.
     version = QueryVersion(id=str(uuid.uuid4())[:12], **body.model_dump())
     repo.add(version)
     return {"id": version.id, "fingerprint": version.fingerprint}
@@ -90,6 +100,10 @@ def get_versions(
     repo:    QueryHistoryRepository = Depends(get_hist_repo),
     cn_repo: ConnectionRepository   = Depends(get_repo),
 ):
+    """
+    Bir sorgu grubunun (fingerprint) tüm versiyonlarını kronolojik sırayla döner. Kayıt yoksa boş liste döner.
+    Erişim, ilk versiyonun bağlantısına göre kontrol edilir.
+    """
     from dataclasses import asdict
     versions = repo.get_versions(fingerprint)
     if not versions:
@@ -106,7 +120,9 @@ def get_recent(
     repo:    QueryHistoryRepository = Depends(get_hist_repo),
     cn_repo: ConnectionRepository   = Depends(get_repo),
 ):
+    """En son sorguları döner. limit varsayılan 20'dir. Kullanıcılar sadece kendi bağlantılarının sorgularını görür."""
     from dataclasses import asdict
+    # Kullanıcı filtrelemesi sonrası istenen sayıya ulaşmak için iki katı kayıt çekilir.
     recent = repo.get_recent(limit=limit * 2)   # filtre sonrası limit'e ulaşmak için fazladan çek
 
     if current.role == "admin":
@@ -124,6 +140,7 @@ def delete_group(
     repo:    QueryHistoryRepository = Depends(get_hist_repo),
     cn_repo: ConnectionRepository   = Depends(get_repo),
 ):
+    """Bir sorgu grubunu ve tüm versiyonlarını siler. Silinen kayıt sayısını döner."""
     versions = repo.get_versions(fingerprint)
     if versions:
         _check_conn_access(versions[0].conn_id, current, cn_repo)
@@ -136,6 +153,7 @@ def stats(
     current = Depends(get_current_user),
     repo:    QueryHistoryRepository = Depends(get_hist_repo),
 ):
+    """Sorgu geçmişi istatistikleri. Sadece admin görebilir; diğer kullanıcılar 403 alır."""
     if current.role != "admin":
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     return repo.stats()

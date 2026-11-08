@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # BUG-3: quote_identifier — nokta ayrıştırma + regex whitelist
 # ---------------------------------------------------------------------------
 
+# DİKKAT: Python'da $ sondaki yeni satırı da kabul eder; 'ad\n' gibi bir değer geçebilir. fullmatch daha sıkı olurdu.
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -59,6 +60,7 @@ def quote_identifier(identifier: str) -> str:
 # ---------------------------------------------------------------------------
 
 # db_type -> (import edilecek modül adı, pip paket adı, SQLAlchemy dialect prefix'i)
+# Her satır: DB tipi -> import edilecek modül, pip paket adı ve SQLAlchemy URL öneki. Yeni bir DB eklemek için buraya satır eklenir.
 DRIVER_MAP: dict[str, dict[str, str]] = {
     "sqlite":     {"module": "sqlite3",   "package": "",                "dialect": "sqlite"},
     "postgresql": {"module": "psycopg2",  "package": "psycopg2-binary", "dialect": "postgresql+psycopg2"},
@@ -76,6 +78,7 @@ class ConnectorRegistry:
     """
 
     def __init__(self) -> None:
+        """Boş engine sözlüğü ve bir kilit oluşturur. sqlite her zaman kurulu kabul edilir (Python ile birlikte gelir)."""
         self._engines: dict[str, Engine] = {}
         self._lock = threading.Lock()
         # sqlite her zaman stdlib ile gelir, kurulum gerektirmez
@@ -86,6 +89,7 @@ class ConnectorRegistry:
     # ------------------------------------------------------------------
 
     def driver_installed(self, db_type: str) -> bool:
+        """Veritabanı sürücüsü (ör. psycopg2) import edilebiliyor mu diye bakar. Bulunursa önbelleğe alınır. Bilinmeyen db_type için False döner."""
         if db_type not in DRIVER_MAP:
             return False
         if db_type in self._installed:
@@ -107,6 +111,7 @@ class ConnectorRegistry:
 
         package = DRIVER_MAP[db_type]["package"]
         try:
+            # Paket adı ayrı argüman olarak verilir ve kabuk (shell) kullanılmaz. DİKKAT: --break-system-packages sistem Python'una doğrudan kurar; diğer paketleri etkileyebilir.
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--break-system-packages", package],
                 capture_output=True, text=True, timeout=120,
@@ -115,15 +120,19 @@ class ConnectorRegistry:
             return False, f"Kurulum başlatılamadı: {e}"
 
         if result.returncode != 0:
+            # Hata çıktısının son 500 karakteri loga yazılır (uzun çıktıyı kırpmak için).
             logger.error("Driver kurulumu başarısız (%s): %s", db_type, result.stderr[-500:])
+            # Kullanıcıya gösterilen mesajda daha kısa, son 300 karakter kullanılır.
             return False, f"Kurulum başarısız: {result.stderr[-300:]}"
 
+        # Yeni kurulan paketin bulunabilmesi için import önbelleği temizlenir.
         importlib.invalidate_caches()
         if self.driver_installed(db_type):
             return True, f"{db_type} sürücüsü kuruldu"
         return False, "Kurulum tamamlandı ama modül hâlâ import edilemiyor"
 
     def list_drivers(self) -> list[dict]:
+        """Desteklenen tüm veritabanı tiplerini ve her birinin kurulu olup olmadığını listeler."""
         return [
             {"db_type": dt, "installed": self.driver_installed(dt)}
             for dt in DRIVER_MAP
@@ -139,9 +148,11 @@ class ConnectorRegistry:
             raise ValueError(f"Desteklenmeyen db_type: {db_type!r}")
 
         url = self._build_url(db_type, params)
+        # pool_pre_ping: her kullanımdan önce kısa bir test yapar (kopmuş bağlantıyı yakalar). pool_recycle=1800: bağlantılar 30 dk (1800 sn) sonra yenilenir; sunucunun zaman aşımına takılmayı önler.
         engine = create_engine(url, pool_pre_ping=True, pool_recycle=1800)
 
         with self._lock:
+            # Aynı conn_id için eski bir engine varsa kapatılır; bağlantı bilgileri değişmiş olabilir.
             old = self._engines.pop(conn_id, None)
             if old is not None:
                 old.dispose()
@@ -149,12 +160,17 @@ class ConnectorRegistry:
         return engine
 
     def _build_url(self, db_type: str, params: dict) -> str:
+        """
+        db_type ve bağlantı bilgilerinden SQLAlchemy bağlantı adresi (URL) üretir.
+        Şifre bu adresin içine girer; bu yüzden adres loglanmamalıdır.
+        """
         dialect = DRIVER_MAP[db_type]["dialect"]
 
         if db_type == "sqlite":
             # database alanı dosya yolu olarak kullanılır (":memory:" da geçerli)
             return f"sqlite:///{params.get('database', ':memory:')}"
 
+        # Eksik değerler için varsayılanlar: kullanıcı ve şifre boş, host localhost.
         user     = params.get("user") or ""
         password = params.get("password") or ""
         host     = params.get("host") or "localhost"
@@ -162,25 +178,31 @@ class ConnectorRegistry:
         database = params.get("database") or ""
 
         from urllib.parse import quote_plus
+        # Kullanıcı adı ve şifre URL'de sorun çıkarmasın diye kodlanır (ör. '@' veya '/' karakterleri).
         auth = f"{quote_plus(user)}:{quote_plus(password)}@" if user else ""
         port_part = f":{port}" if port else ""
+        # Oracle için bağlantı 'service_name' ile kurulur (SID değil).
         if db_type == "oracle":
             import oracledb
             from urllib.parse import quote_plus as qp
             return f"oracle+oracledb://{auth}{host}{port_part}/?service_name={database}"
         if db_type == "mssql":
             from urllib.parse import quote_plus as qp
+            # ODBC sürücü adı URL'ye kodlanır. TrustServerCertificate=yes sunucu sertifika kontrolünü kapatır; test ortamında kolaylık sağlar, üretimde risklidir.
             driver = qp("ODBC Driver 18 for SQL Server")
             return f"{dialect}://{auth}{host}{port_part}/{database}?driver={driver}&TrustServerCertificate=yes"
+        # DİKKAT: host ve database adı URL'ye kodlanmadan eklenir; bu değerlerde '/', '?' veya '@' varsa adres bozulabilir.
         return f"{dialect}://{auth}{host}{port_part}/{database}"
 
     def remove_engine(self, conn_id: str) -> None:
+        """conn_id'nin engine'ini kayıt defterinden çıkarır ve bağlantı havuzunu kapatır (dispose)."""
         with self._lock:
             engine = self._engines.pop(conn_id, None)
         if engine is not None:
             engine.dispose()
 
     def dispose_all(self) -> None:
+        """Tüm engine'leri kapatır ve kayıt defterini boşaltır. Uygulama kapanırken çağrılır."""
         with self._lock:
             engines = list(self._engines.values())
             self._engines.clear()
@@ -196,8 +218,13 @@ class ConnectorRegistry:
     # ------------------------------------------------------------------
 
     def test_connection(self, engine: Engine) -> tuple[bool, str]:
+        """
+        Verilen engine ile basit bir sorgu (SELECT 1) çalıştırır.
+        Başarılıysa (True, 'Bağlantı başarılı'), hata varsa (False, hata metni) döner.
+        """
         try:
             with engine.connect() as conn:
+                # Önce SELECT 1 denenir; desteklenmezse (ör. Oracle) SELECT 1 FROM DUAL denenir.
                 try:
                     conn.execute(text("SELECT 1"))
                 except Exception:

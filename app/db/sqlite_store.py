@@ -25,6 +25,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Tüm tablolar için DDL — migration basit: IF NOT EXISTS
+# Uygulama açılışında çalışan tüm tablo tanımları. IF NOT EXISTS sayesinde tekrar çalışması güvenlidir; var olan tabloyu silmez.
 SCHEMA_DDL = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -147,29 +148,40 @@ class SQLiteStore:
     """
 
     def __init__(self, db_path: str = ":memory:") -> None:
+        """
+        Veritabanı dosyasını açar, bağlantıyı kurar ve tabloları oluşturur.
+        db_path: dosya yolu. Varsayılan ':memory:' geçici bellek veritabanıdır; program kapanınca silinir.
+        """
         self.db_path = db_path
+        # Kilit: tek SQLite bağlantısı birden çok thread tarafından aynı anda kullanılmasın diye.
         self._lock   = threading.Lock()
         self._conn   = self._connect()
         self._apply_schema()
         logger.info("SQLiteStore başlatıldı: %s", db_path)
 
     def _connect(self) -> sqlite3.Connection:
+        """SQLite bağlantısı açar. Satırlar sözlük gibi (row['kolon']) okunabilsin diye row_factory ayarlanır."""
+        # check_same_thread=False: bağlantı başka bir thread'den de kullanılabilir. Güvenliği yukarıdaki kilit sağlar.
         conn = sqlite3.connect(
             self.db_path,
             check_same_thread=False,
+            # Kolon tipi bildirimine göre değerlerin Python tipine çevrilmesini açar.
             detect_types=sqlite3.PARSE_DECLTYPES,
         )
         conn.row_factory = sqlite3.Row
         return conn
 
     def _apply_schema(self) -> None:
+        """SCHEMA_DDL içindeki tabloları oluşturur, sonra eski kurulumlarda eksik kalmış kolonları ekler (migration)."""
         with self._lock:
+            # executescript birden çok komutu birlikte çalıştırır; kendi commit'ini yapar.
             self._conn.executescript(SCHEMA_DDL)
             self._conn.commit()
         logger.info("Şema uygulandı")
         # Mevcut DB'lerde owner_id kolonu yoksa ekle (migration)
         self.add_column_if_missing("connections", "owner_id", "TEXT NOT NULL DEFAULT 'anonymous'")
         self.add_column_if_missing("dashboards",  "owner_id", "TEXT NOT NULL DEFAULT 'anonymous'")
+        # Eski kurulumlarda bu kolonlar yoktur; yoksa eklenir (migration).
         self.add_column_if_missing("connections", "port_", "INTEGER")
         self.add_column_if_missing("connections", "password_enc", "TEXT")
 
@@ -180,24 +192,29 @@ class SQLiteStore:
     def execute(self, sql: str, params: dict | tuple = ()) -> sqlite3.Cursor:
         """INSERT / UPDATE / DELETE — lock altında çalışır."""
         with self._lock:
+            # Dönen cursor (ör. etkilenen satır sayısı için) kilit kaldırıldıktan sonra da kullanılabilir.
             cur = self._conn.execute(sql, params)
             self._conn.commit()
             return cur
 
     def executemany(self, sql: str, params_list: list) -> None:
+        """Aynı SQL'i birden çok parametre satırı ile çalıştırır (toplu ekleme). Kilit altında çalışır ve commit eder."""
         with self._lock:
             self._conn.executemany(sql, params_list)
             self._conn.commit()
 
     def fetchone(self, sql: str, params: dict | tuple = ()) -> sqlite3.Row | None:
+        """SELECT sorgusunun ilk satırını döner. Sonuç yoksa None döner. Kilit altında çalışır."""
         with self._lock:
             return self._conn.execute(sql, params).fetchone()
 
     def fetchall(self, sql: str, params: dict | tuple = ()) -> list[sqlite3.Row]:
+        """SELECT sorgusunun tüm satırlarını liste olarak döner. Kilit altında çalışır."""
         with self._lock:
             return self._conn.execute(sql, params).fetchall()
 
     def close(self) -> None:
+        """Veritabanı bağlantısını kapatır. Kapatıldıktan sonra bu store ile sorgu yapılamaz."""
         self._conn.close()
 
     # ------------------------------------------------------------------
@@ -205,11 +222,21 @@ class SQLiteStore:
     # ------------------------------------------------------------------
 
     def add_column_if_missing(self, table: str, column: str, definition: str) -> None:
+        """
+        Tabloda kolon yoksa ALTER TABLE ile ekler; varsa hiçbir şey yapmaz.
+        Eski veritabanı dosyaları bozulmadan yeni kolon eklemek için kullanılır.
+        """
+        # PRAGMA table_info her kolon için satır döner; r[1] kolon adıdır.
         existing = [r[1] for r in self.fetchall(f"PRAGMA table_info({table})")]
         if column not in existing:
             self.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
             logger.info("Kolon eklendi: %s.%s", table, column)
 
     def table_row_count(self, table: str) -> int:
+        """
+        Tablodaki toplam satır sayısını döner.
+        DİKKAT: Tablo adı SQL'e doğrudan yazılır; sadece kodda sabit verilen tablo adlarıyla çağrılmalı.
+        """
+        # DİKKAT: Tablo adı f-string ile yazılıyor (parametre olarak geçilemez). Dış girdi ile çağrılmamalı.
         row = self.fetchone(f"SELECT COUNT(*) as n FROM {table}")
         return row["n"] if row else 0

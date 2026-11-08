@@ -26,9 +26,11 @@ def build_top_n_plan(intent, slots, conn_id):
     if intent is None or slots is None:
         return None
 
+    # Sonuç kolonunun adı: ölçü kolonunun küçük harfli hali + '_toplam' (ör. linetotal_toplam).
     metric_alias = f"{slots.metric_col.lower()}_toplam"
 
     joins = []
+    # Boyut ile ölçü farklı tablolardaysa join yolundaki her adım bir INNER JOIN olarak eklenir.
     if slots.join_path:
         current_t1 = slots.dimension_table
         for hop in slots.join_path:
@@ -40,26 +42,33 @@ def build_top_n_plan(intent, slots, conn_id):
                 "t2": to_table_full,
                 "f2": hop["on_b"],
             })
+            # Bir sonraki adımda t1 olarak kullanılacak tablo adı (şemasız).
             current_t1 = to_table_full.split(".", 1)[-1]
 
     plan = {
         "conn_id": conn_id,
         "base_table": slots.dimension_table,
         "schema_name": slots.dimension_schema,
+        # Gösterilecek boyut kolonu 'group' rolüyle SELECT'e eklenir.
         "fields": {slots.dimension_display_col: "group"},
         "joins": joins,
         "filters": [],
         "group_by": [slots.dimension_display_col],
+        # En çok (DESC) sıralama için ölçü başına '-' eklenir; sql_builder bunu DESC olarak çevirir.
         "order_by": [
             ("-" if intent.direction == "DESC" else "") + metric_alias
         ],
+        # Ölçü toplamı hesaplanmış alan olarak tanımlanır: SUM(kolon) AS alias.
         "calculated_fields": [
             {"name": metric_alias, "formula": f"SUM({slots.metric_col})"}
         ],
+        # Ölçü kolonu sadece SUM içinde kullanılır; ham SELECT kolonu olarak eklenmez (GROUP BY hatası olmasın diye).
         "formula_only_columns": [slots.metric_col],
+        # TODO(kontrol): /api/query/run isteğinde satır sayısı alanı 'sample' (varsayılan 100). Bu plan 'limit' anahtarı üretiyor; /run'a aynen gönderilirse N uygulanmaz. Kontrol edilmeli.
         "limit": intent.n,
     }
 
+    # _meta: izleme ve hata ayıklama için ek bilgi. QueryRunRequest bu alanı kullanmaz.
     plan["_meta"] = {
         "nlq_raw_text": intent.raw_text,
         "nlq_confidence": round(slots.confidence, 1),

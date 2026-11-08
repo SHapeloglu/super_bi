@@ -7,6 +7,7 @@ is terimleri. Bu sozluk DETERMINISTIK tespite (granularity_analyzer.py)
 GIRDI DEGILDIR, sadece NLQ katmaninin slot doldurma asamasinda kullanilir.
 """
 
+# Ölçü (metric) ipuçları: Türkçe kelime -> şemada olabilecek İngilizce kolon adları. Kesin eşleşme değil, aday üretmek içindir.
 METRIC_SYNONYMS = {
     "satan": ["sales", "salesamount", "totaldue", "orderqty", "quantity", "linetotal"],
     "satış": ["sales", "salesamount", "totaldue", "linetotal"],
@@ -32,6 +33,7 @@ METRIC_SYNONYMS = {
     "agirlik": ["weight"],
 }
 
+# Boyut ipuçları: Türkçe varlık adı -> olası tablo adları.
 DIMENSION_SYNONYMS = {
     "ürün": ["product"],
     "urun": ["product"],
@@ -54,21 +56,30 @@ DIMENSION_SYNONYMS = {
 
 
 def expand_metric_hint(hint: str):
+    """
+    Türkçe ölçü ipucunu (ör. 'en çok satan') şemada aranacak İngilizce kolon adı adaylarına çevirir.
+    Sözlükteki anahtarla başlayan ya da onunla başlayan kelimeler eşleşir. Sonuç bir liste döner.
+    """
+    # Küçük harfe çevrilip boşluklarla kelimelere ayrılır; her kelime için sözlük taranır.
     hint_lower = (hint or "").lower().strip()
     candidates = set()
     for word in hint_lower.split():
         for key, syns in METRIC_SYNONYMS.items():
             if word.startswith(key) or key.startswith(word):
                 candidates.update(syns)
+    # Kelimelerin kendisi de aday olur; sözlükte olmasa da kolon adı olabilirler.
     candidates.update(hint_lower.split())
     return list(candidates)
 
 
 def expand_dimension_hint(hint: str):
+    """Türkçe boyut ipucunu (ör. 'ürün') olası tablo adı adaylarına çevirir. İpucunun kendisi de aday listesine eklenir."""
     hint_lower = (hint or "").lower().strip()
     candidates = set()
     for key, syns in DIMENSION_SYNONYMS.items():
+        # DİKKAT: Boş ipucu ('') her anahtarla eşleşir ve tüm boyutları aday yapar. Çağıran taraf boş ipucunu engellemelidir.
         if hint_lower.startswith(key) or key.startswith(hint_lower):
             candidates.update(syns)
+    # İpucunun kendisi de aday listesine eklenir.
     candidates.add(hint_lower)
     return list(candidates)
