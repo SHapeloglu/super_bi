@@ -25,7 +25,7 @@ class SQLBuilder:
     SQL metnini parça parça kuran sınıf.
     Tablo ve kolon adları quote_identifier ile güvenli hale getirilir; değerler ise parametre olarak (:p_0 gibi) gönderilir.
     """
-    def _select_columns(self, base_table: str, fields: dict[str, str]) -> list[str]:
+    def _select_columns(self, base_table: str, fields: dict[str, str], dialect: str = "sqlite") -> list[str]:
         """
         SELECT listesindeki kolonları üretir. role 'off' olan kolonlar atlanır; hiç kolon kalmazsa tüm kolonlar (*) döner.
         Dönüş: tırnaklı kolon metinlerinin listesi.
@@ -36,10 +36,10 @@ class SQLBuilder:
             if role == "off":
                 continue
             # Noktalı ad (tablo.kolon) zaten tam nitelikli; nokta yoksa temel tablo adıyla birlikte yazılır.
-            cols.append(quote_identifier(key) if "." in key
-                        else f"{quote_identifier(base_table)}.{quote_identifier(key)}")
+            cols.append(quote_identifier(key, dialect) if "." in key
+                        else f"{quote_identifier(base_table, dialect)}.{quote_identifier(key, dialect)}")
         # Hiç kolon seçilmediyse tüm kolonlar (*) alınır.
-        return cols or [f"{quote_identifier(base_table)}.*"]
+        return cols or [f"{quote_identifier(base_table, dialect)}.*"]
 
     def _calculated_columns(
         self,
@@ -80,21 +80,21 @@ class SQLBuilder:
                 compiled = validate_and_compile(cf.formula, db_type, allowed_columns)
             except ExpressionError as e:
                 raise ValueError(f"Hesaplanmış alan {cf.name!r}: {e}")
-            parts.append(f"{compiled} AS {quote_identifier(cf.name)}")
+            parts.append(f"{compiled} AS {quote_identifier(cf.name, db_type)}")
         return parts
 
-    def _join_clauses(self, joins: list[JoinDef]) -> str:
+    def _join_clauses(self, joins: list[JoinDef], dialect: str = "sqlite") -> str:
         """JOIN satırlarını üretir (ör. 'LEFT JOIN t2 ON t1.f1 = t2.f2'). Birden çok join satır satır birleştirilir."""
         parts = []
         for j in joins:
             # Her join parçası önce quote_identifier'dan geçer; güvenli olmayan bir ad ValueError verir.
-            t1 = quote_identifier(j.t1); f1 = quote_identifier(j.f1)
-            t2 = quote_identifier(j.t2); f2 = quote_identifier(j.f2)
+            t1 = quote_identifier(j.t1, dialect); f1 = quote_identifier(j.f1, dialect)
+            t2 = quote_identifier(j.t2, dialect); f2 = quote_identifier(j.f2, dialect)
             # JOIN tipi (JOIN, LEFT JOIN vb.) şema seviyesinde whitelist'ten geçtiği için tırnaksız yazılabilir.
             parts.append(f"{j.type} {t2} ON {t1}.{f1} = {t2}.{f2}")
         return "\n".join(parts)
 
-    def _where_clauses(self, filters: list[FilterDef]) -> tuple[str, dict[str, Any]]:
+    def _where_clauses(self, filters: list[FilterDef], dialect: str = "sqlite") -> tuple[str, dict[str, Any]]:
         """
         WHERE koşullarını üretir. Dönüş: (where metni, parametre sözlüğü).
         Koşullar AND ile bağlanır. IN için her değer ayrı parametre olur. Filtre yoksa boş metin döner.
@@ -104,7 +104,7 @@ class SQLBuilder:
 
         for i, f in enumerate(filters):
             op  = f.operator   # zaten whitelist'ten geçti (FilterDef validator)
-            col = f"{quote_identifier(f.table)}.{quote_identifier(f.column)}"
+            col = f"{quote_identifier(f.table, dialect)}.{quote_identifier(f.column, dialect)}"
             # Parametre adı filtre sırasına göre üretilir (p_0, p_1...). Değer SQL metnine değil, parametre olarak gider.
             p   = f"p_{i}"
 
@@ -167,7 +167,7 @@ class SQLBuilder:
             fields = {k.upper(): v for k, v in fields.items()}
             if schema:
                 schema = schema.upper()
-        select_cols = self._select_columns(base_table, fields)
+        select_cols = self._select_columns(base_table, fields, db_type)
         select_cols += self._calculated_columns(
             fields, calculated_fields or [], db_type, formula_only_columns
         )
@@ -180,15 +180,15 @@ class SQLBuilder:
         select_sql = select_prefix + "\n  " + ",\n  ".join(select_cols)
         # Şema verilmişse tablo adı 'şema.tablo' biçiminde yazılır.
         qualified_table = f"{schema}.{base_table}" if schema else base_table
-        from_sql   = f"FROM {quote_identifier(qualified_table)}"
-        join_sql   = self._join_clauses(joins)
-        where_sql, params = self._where_clauses(filters)
+        from_sql   = f"FROM {quote_identifier(qualified_table, db_type)}"
+        join_sql   = self._join_clauses(joins, db_type)
+        where_sql, params = self._where_clauses(filters, db_type)
 
         # GROUP BY ve ORDER BY kolonları da quote_identifier'dan geçer. Sıralamada başta '-' varsa DESC olur.
-        group_sql = ("GROUP BY " + ", ".join(quote_identifier(g) for g in group_by)
+        group_sql = ("GROUP BY " + ", ".join(quote_identifier(g, db_type) for g in group_by)
                      if group_by else "")
         order_sql = ("ORDER BY " + ", ".join(
-                         quote_identifier(o.lstrip("-")) + (" DESC" if o.startswith("-") else "")
+                         quote_identifier(o.lstrip("-"), db_type) + (" DESC" if o.startswith("-") else "")
                          for o in order_by)
                      if order_by else "")
 

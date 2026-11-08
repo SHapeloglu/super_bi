@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def quote_identifier(identifier: str) -> str:
+def quote_identifier(identifier: str, dialect: str = "sqlite") -> str:
     """
     Tablo/kolon adını güvenli şekilde çift tırnaklar.
     'tablo.kolon' gibi noktalı girişleri parçalara ayırıp HER PARÇAYI
@@ -52,6 +52,9 @@ def quote_identifier(identifier: str) -> str:
         if not _IDENT_RE.match(part):
             raise ValueError(f"İzin verilmeyen identifier: {identifier!r}")
 
+    # MySQL ailesinde (mysql, doris) çift tırnak string literal'dir; identifier backtick ile yazılır.
+    if dialect in ("mysql", "doris"):
+        return ".".join(f"`{p}`" for p in parts)
     return ".".join(f'"{p}"' for p in parts)
 
 
