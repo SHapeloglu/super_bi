@@ -109,9 +109,10 @@ async def generic_handler(request: Request, exc: Exception):
 # ── Router'lar ──────────────────────────────────────────────────────
 
 # Router modülleri burada import edilir. E402 uyarısı (import yeri) bilerek bastırılmıştır.
-from app.api import auth, connections, drivers, schema, query, dashboard, history, datasets, analyze  # noqa: E402
+from app.api import auth, connections, drivers, schema, query, dashboard, history, datasets, analyze, users  # noqa: E402
 
 app.include_router(auth.router,        prefix="/api/auth",       tags=["auth"])
+app.include_router(users.router,       prefix="/api/users",      tags=["users"])
 app.include_router(drivers.router,     prefix="/api/drivers",    tags=["drivers"])
 app.include_router(connections.router, prefix="/api/connections",tags=["connections"])
 app.include_router(schema.router,      prefix="/api/schema",     tags=["schema"])

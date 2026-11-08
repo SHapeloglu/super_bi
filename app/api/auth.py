@@ -9,6 +9,8 @@ kapatmak için eklendi.
 sistemde giriş yapacak hiç kimse olmaması sorununu çözer. Sonraki kayıtlar
 'viewer' rolüyle açılır, admin gerekirse sonradan DB'de rolünü değiştirir.
 """
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.jwt_core import create_token
@@ -30,6 +32,12 @@ def register(
     Yeni kullanıcı kaydı (201). İlk kullanıcı admin, sonrakiler viewer rolüyle açılır. Kullanıcı adı alınmışsa 409 döner.
     Başarılıysa hemen token döner; ayrıca giriş yapılması gerekmez.
     """
+    # Faz 0.3: açık kayıt varsayılan olarak kapalı. Sistemde kullanıcı varken yeni kayıt yalnız
+    # DATALENS_ALLOW_REGISTER=true ise kabul edilir; yeni kullanıcıyı admin POST /api/users ile ekler.
+    # Boş sistemde (bootstrap) ilk kayıt her zaman açıktır.
+    if repo.count() > 0 and os.environ.get("DATALENS_ALLOW_REGISTER", "false").lower() != "true":
+        raise HTTPException(status_code=403, detail="Kayıt kapalı; kullanıcıyı yönetici oluşturmalı")
+
     try:
         user = repo.create(body.username, body.password)
     except ValueError as e:
