@@ -112,3 +112,8 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 - **Neden:** kısa gerekçe
 - **Notlar:** büyüklük, bağımlılıklar, riskler
 ```
+
+### Viewer kendi veri seti için bağlantı
+- **Kategori:** karar bekliyor (ürün)
+- **Neden:** Viewer bağlantı oluşturamadığı için kendi veri setini kaydedemez; paylaşılan veri setlerini yalnız çalıştırır.
+- **Notlar:** Seçenekler: (a) viewer'a paylaşılmış bağlantıyla kayıt; (b) bağlantı paylaşımı (`shares` tablosunu bağlantıya genişletmek). Güvenlik etkisi: bağlantı kimlik bilgisi paylaşımı; dikkatli tasarım gerekir.
