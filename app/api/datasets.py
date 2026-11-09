@@ -25,7 +25,7 @@ from pydantic import model_validator
 from typing import Any
 from app.core.sharing import ShareRepository, effective_permission, allows
 from app.core.connector_registry import ConnectorRegistry
-from app.models.schemas import JoinDef, FilterDef
+from app.models.schemas import JoinDef, FilterDef, CalculatedFieldDef
 from app.services.sql_builder import sql_builder
 from app.services.query_executor import QueryExecutor
 
@@ -52,6 +52,10 @@ class DatasetIn(BaseModel):
     filters:    list           = []
     group_by:   list           = []
     order_by:   list           = []
+    # Hedef şema adı; None ise tablo şemasız kullanılır.
+    schema_name: Optional[str] = None
+    # Hesaplanmış alanlar [{"name", "formula"}]. Formüller kayıtta değil, çalıştırmada doğrulanır.
+    calculated_fields: list    = []
 
 
 def _check_conn_ownership(conn_id: str, current, conn_repo: ConnectionRepository) -> None:
@@ -87,6 +91,7 @@ def create_dataset(
         conn_id=body.conn_id, base_table=body.base_table,
         fields=body.fields, joins=body.joins, filters=body.filters,
         group_by=body.group_by, order_by=body.order_by,
+        schema_name=body.schema_name, calculated_fields=body.calculated_fields,
     )
     repo.save(ds)
     return {"dataset_id": dataset_id, "name": ds.name, "msg": "Kaydedildi"}
@@ -120,7 +125,9 @@ def update_dataset(
         yapi_ayni = (body.conn_id == existing.conn_id and body.base_table == existing.base_table
                      and body.fields == existing.fields and body.joins == existing.joins
                      and body.filters == existing.filters and body.group_by == existing.group_by
-                     and body.order_by == existing.order_by)
+                     and body.order_by == existing.order_by
+                     and body.schema_name == existing.schema_name
+                     and body.calculated_fields == existing.calculated_fields)
         if not yapi_ayni:
             raise HTTPException(status_code=403, detail="Veri setinin yapısını yalnız sahibi değiştirebilir")
 
@@ -135,6 +142,7 @@ def update_dataset(
         conn_id=body.conn_id, base_table=body.base_table,
         fields=body.fields, joins=body.joins, filters=body.filters,
         group_by=body.group_by, order_by=body.order_by,
+        schema_name=body.schema_name, calculated_fields=body.calculated_fields,
     )
     repo.save(ds)
     return {"dataset_id": dataset_id, "msg": "Güncellendi — buna bağlı tüm widget'lar bir sonraki görüntülemede güncel veriyi gösterecek"}
@@ -167,6 +175,7 @@ def list_datasets(
             continue
         out.append({"dataset_id": d.dataset_id, "owner_id": d.owner_id, "name": d.name,
                     "conn_id": d.conn_id, "base_table": d.base_table, "updated_at": d.updated_at,
+                    "schema_name": d.schema_name, "calculated_fields": d.calculated_fields,
                     "permission": perm})
     return out
 
@@ -375,6 +384,9 @@ def run_dataset(
             limit=body.sample,
             offset=0,
             db_type=meta.db_type,
+            schema=ds.schema_name,
+            # Geçersiz ad/formül kayıtta değil burada yakalanır; 400 döner.
+            calculated_fields=[CalculatedFieldDef(**cf) for cf in ds.calculated_fields],
         )
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=str(e))

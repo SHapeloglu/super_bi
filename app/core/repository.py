@@ -99,6 +99,10 @@ class Dataset:
     filters:    list       = field(default_factory=list)
     group_by:   list       = field(default_factory=list)
     order_by:   list       = field(default_factory=list)
+    # Hedef şema adı (ör. "hr"); None ise base_table şemasız kullanılır.
+    schema_name: Optional[str] = None
+    # Hesaplanmış alanlar: [{"name": ..., "formula": ...}, ...]. Formüller çalıştırmada doğrulanır.
+    calculated_fields: list = field(default_factory=list)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -392,15 +396,19 @@ class DatasetRepository:
             INSERT INTO datasets
               (dataset_id, owner_id, name, conn_id, base_table,
                fields_json, joins_json, filters_json, group_by_json, order_by_json,
+               schema_name, calculated_fields_json,
                created_at, updated_at)
             VALUES (:id,:owner,:name,:conn_id,:base_table,
                     :fields,:joins,:filters,:group_by,:order_by,
+                    :schema_name,:calc,
                     :now,:now)
             ON CONFLICT(dataset_id) DO UPDATE SET
               name=excluded.name, conn_id=excluded.conn_id, base_table=excluded.base_table,
               fields_json=excluded.fields_json, joins_json=excluded.joins_json,
               filters_json=excluded.filters_json, group_by_json=excluded.group_by_json,
-              order_by_json=excluded.order_by_json, updated_at=excluded.updated_at
+              order_by_json=excluded.order_by_json,
+              schema_name=excluded.schema_name, calculated_fields_json=excluded.calculated_fields_json,
+              updated_at=excluded.updated_at
         """, {
             "id": ds.dataset_id, "owner": ds.owner_id, "name": ds.name,
             "conn_id": ds.conn_id, "base_table": ds.base_table,
@@ -409,6 +417,8 @@ class DatasetRepository:
             "filters": json.dumps(ds.filters, ensure_ascii=False),
             "group_by": json.dumps(ds.group_by, ensure_ascii=False),
             "order_by": json.dumps(ds.order_by, ensure_ascii=False),
+            "schema_name": ds.schema_name,
+            "calc": json.dumps(ds.calculated_fields, ensure_ascii=False),
             "now": _now(),
         })
 
@@ -466,6 +476,9 @@ def _row_to_dataset(row: "sqlite3.Row") -> Dataset:
         fields=json.loads(row["fields_json"]), joins=json.loads(row["joins_json"]),
         filters=json.loads(row["filters_json"]), group_by=json.loads(row["group_by_json"]),
         order_by=json.loads(row["order_by_json"]),
+        schema_name=row["schema_name"],
+        # Migration öncesi satırlarda kolon NULL kalır; boş liste sayılır.
+        calculated_fields=json.loads(row["calculated_fields_json"] or "[]"),
         created_at=row["created_at"], updated_at=row["updated_at"],
     )
 
