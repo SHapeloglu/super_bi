@@ -215,6 +215,9 @@ class SQLiteStore:
         # Eski kurulumlarda bu kolonlar yoktur; yoksa eklenir (migration).
         self.add_column_if_missing("connections", "port_", "INTEGER")
         self.add_column_if_missing("connections", "password_enc", "TEXT")
+        # Veri seti şema adı ve hesaplanmış alanlar (JSON). Eski satırlarda NULL kalır.
+        self.add_column_if_missing("datasets", "schema_name", "TEXT")
+        self.add_column_if_missing("datasets", "calculated_fields_json", "TEXT")
 
     # ------------------------------------------------------------------
     # Temel operasyonlar
