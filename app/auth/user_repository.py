@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import logging
 import os
+import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -97,21 +98,28 @@ class UserRepository:
         password_hash = _hash_password(password)
         now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
 
-        if role is None:
-            # Rol için ayrı bir "sayım" adımı yok; sayım ile kayıt aynı INSERT içinde olduğu için
-            # iki eşzamanlı ilk kayıt da admin olamaz. Tablo boşsa ilk kullanıcı admin olur.
-            self._s.execute(
-                "INSERT INTO users (user_id, username, password_hash, role, created_at) "
-                "VALUES (?, ?, ?, CASE WHEN (SELECT COUNT(*) FROM users) = 0 THEN 'admin' ELSE 'viewer' END, ?)",
-                (user_id, username, password_hash, now),
-            )
-        else:
-            # Rol açıkça verildiyse eski davranış: verilen rol doğrudan yazılır.
-            self._s.execute(
-                "INSERT INTO users (user_id, username, password_hash, role, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (user_id, username, password_hash, role, now),
-            )
+        try:
+            if role is None:
+                # Rol için ayrı bir "sayım" adımı yok; sayım ile kayıt aynı INSERT içinde olduğu için
+                # iki eşzamanlı ilk kayıt da admin olamaz. Tablo boşsa ilk kullanıcı admin olur.
+                self._s.execute(
+                    "INSERT INTO users (user_id, username, password_hash, role, created_at) "
+                    "VALUES (?, ?, ?, CASE WHEN (SELECT COUNT(*) FROM users) = 0 THEN 'admin' ELSE 'viewer' END, ?)",
+                    (user_id, username, password_hash, now),
+                )
+            else:
+                # Rol açıkça verildiyse eski davranış: verilen rol doğrudan yazılır.
+                self._s.execute(
+                    "INSERT INTO users (user_id, username, password_hash, role, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (user_id, username, password_hash, role, now),
+                )
+        except sqlite3.IntegrityError as e:
+            # Kontrol (get_by_username) ile ekleme arasında aynı ad başka bir istekle eklenmiş olabilir;
+            # bu bir UNIQUE ihlalidir ve istemciye 409 olarak dönmelidir (ValueError -> 409). Diğer bütünlük hataları yukarı taşınır.
+            if "username" not in str(e):
+                raise
+            raise ValueError(f"Kullanıcı adı zaten alınmış: {username}") from e
 
         # Rolü veritabanından geri okuyoruz; böylece dönen nesne kayıttaki gerçek rolü gösterir.
         created = self.get_by_id(user_id)

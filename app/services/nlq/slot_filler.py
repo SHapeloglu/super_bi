@@ -5,16 +5,17 @@ NLQ Kademe 1 - Slot Doldurma
 TopNIntent (ham metin ipuclari) + sema metadata (table_profiles,
 datasets_relationships) -> somut tablo/kolon/join eslestirmesi.
 
-table_profiles beklenen format (granularity_analyzer.py / /api/analyze
-{conn_id}/results ile TEYIT EDILMELI):
+table_profiles beklenen format:
   [{"schema": "Production", "table": "Product",
     "columns": {"Name": "categorical", "ListPrice": "metric", ...}}, ...]
+/api/analyze/{conn_id}/results çıktısı ({"table_name": "Production.Product",
+"columns": [{"name": ..., "classification": ...}, ...]}) normalize_table_profiles
+ile bu biçime çevrilir; fill_slots bunu kendisi uygular.
 
 relationships beklenen format:
   [{"table_a": "Sales.SalesOrderDetail", "column_a": "ProductID",
     "table_b": "Production.Product", "column_b": "ProductID"}, ...]
 """
-# TODO(kontrol): /api/analyze/{conn_id}/results çıktısı 'table_name' anahtarını ve kolonları liste olarak döndürüyor; bu modül ise 'table' anahtarı ve kolon->sınıf sözlüğü bekliyor. Çağıran taraf dönüşümü yapmazsa eşleşme çalışmaz. Kontrol edilmeli.
 from rapidfuzz import fuzz, process
 
 from .synonyms import expand_dimension_hint, expand_metric_hint
@@ -51,6 +52,27 @@ class FilledSlots:
         return (f"FilledSlots(dim={self.dimension_schema}.{self.dimension_table}."
                 f"{self.dimension_display_col}, metric={self.metric_schema}.{self.metric_table}."
                 f"{self.metric_col}, join={self.join_path}, conf={self.confidence:.1f})")
+
+
+def normalize_table_profiles(table_profiles):
+    """
+    /api/analyze/{conn_id}/results biçimindeki tablo profillerini (table_name + kolon listesi)
+    slot_filler biçimine (schema + table + kolon->sınıf sözlüğü) çevirir. Zaten
+    slot_filler biçimindeyse olduğu gibi bırakılır.
+    """
+    normalized = []
+    for tp in table_profiles:
+        if "table" in tp and isinstance(tp.get("columns"), dict):
+            normalized.append(tp)
+            continue
+        full_name = tp["table_name"]
+        if "." in full_name:
+            schema, table = full_name.split(".", 1)
+        else:
+            schema, table = None, full_name
+        columns = {c["name"]: c["classification"] for c in tp["columns"]}
+        normalized.append({"schema": schema, "table": table, "columns": columns})
+    return normalized
 
 
 def _match_dimension_table(dimension_hint, table_profiles):
@@ -152,6 +174,7 @@ def _find_join_path(from_table_key, to_table_key, relationships, max_hops=MAX_JO
 
 def fill_slots(intent, table_profiles, relationships):
     """TopNIntent -> FilledSlots (veya None eger yeterli guvenle eslesme yoksa)"""
+    table_profiles = normalize_table_profiles(table_profiles)
     dim_tp, dim_score = _match_dimension_table(intent.dimension_hint, table_profiles)
     # Boyut tablosu eşleşmediyse slot doldurma başarısızdır (None).
     if dim_tp is None:

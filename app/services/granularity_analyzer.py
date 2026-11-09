@@ -231,13 +231,12 @@ def _distinct_count(engine: Engine, table_name: str, column: str) -> int:
 def detect_grain(
     engine: Engine, table_name: str, columns: list[str], row_count: int
 ) -> list[str]:
-    # TODO(kontrol): Aşağıdaki docstring'de yazım hatası var ('c~apsamında', 'kapsamında' olmalı). Metin değiştirilmedi.
     """
     Grain tespiti: önce her sütunu tek başına dener (COUNT(*) == COUNT(DISTINCT)
     ise o sütun tablonun grain'i). Hiçbir tek sütun tekillik sağlamıyorsa,
     tüm sütunların birleşimini kompozit grain adayı olarak test eder.
     Not: tam kombinasyon taraması (powerset) büyük tablolarda maliyetli
-    olduğundan MVP c~apsamında tek sütun + tam-küme fallback yeterli kabul
+    olduğundan MVP kapsamında tek sütun + tam-küme fallback yeterli kabul
     edilir; ARCHITECTURE.md'deki "kombinasyonlar test edilir" ifadesi bu
     iki adımı kapsar.
     """
@@ -333,9 +332,8 @@ def classify_columns(
 
 
 def profile_table(engine: Engine, table_name: str) -> TableProfile:
-    # TODO(kontrol): Aşağıdaki docstring'de bozuk bir kelime var ('eyybo'; muhtemelen 'tek bir tablo' olmalı). Metin değiştirilmedi.
     """
-    Tek bir eyybo için tam profil: row_count + grain + sütun sınıflandırma.
+    Tek bir tablo için tam profil: row_count + grain + sütun sınıflandırma.
     table_name "Schema.Table" (örn. "Sales.Customer") ya da şemasız
     "Table" formatında olabilir; inspect() çağrıları için ayrıştırılır,
     SQL sorguları için (quote_identifier) tam nitelikli haliyle kullanılır.
