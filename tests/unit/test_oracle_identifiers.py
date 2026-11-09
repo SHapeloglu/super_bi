@@ -79,7 +79,7 @@ def test_build_oracle_hic_kucuk_harfli_tirnak_kalmaz():
     sql = _full_oracle_sql()
     assert not LOWER_QUOTED.search(sql), f"küçük harfli tırnaklı identifier var:\n{sql}"
     assert '"MUSTERI"."ID"' in sql and '"ORDERS"."MID"' in sql, sql
-    assert "GROUP BY \"ID\"" in sql and 'ORDER BY "ID" DESC' in sql, sql
+    assert 'GROUP BY "ORDERS"."ID"' in sql and 'ORDER BY "ORDERS"."ID" DESC' in sql, sql
 
 
 def test_build_oracle_schema_ile():

@@ -180,10 +180,20 @@ class SQLBuilder:
         where_sql, params = self._where_clauses(filters, db_type)
 
         # GROUP BY ve ORDER BY kolonları da quote_identifier'dan geçer. Sıralamada başta '-' varsa DESC olur.
-        group_sql = ("GROUP BY " + ", ".join(quote_identifier(g, db_type) for g in group_by)
+        # Join varsa, nokta içermeyen ve calculated field alias'ı olmayan kolonlar base_table ile nitelenir;
+        # aksi halde iki tabloda ortak kolon adı "ambiguous column" hatası verir. Alias'ı nitelemek SQL'de
+        # alias'ı bozacağı için calculated field adları olduğu gibi kalır.
+        alias_names = {cf.name for cf in (calculated_fields or [])}
+
+        def _col(name: str) -> str:
+            if joins and "." not in name and name not in alias_names:
+                return f"{quote_identifier(base_table, db_type)}.{quote_identifier(name, db_type)}"
+            return quote_identifier(name, db_type)
+
+        group_sql = ("GROUP BY " + ", ".join(_col(g) for g in group_by)
                      if group_by else "")
         order_sql = ("ORDER BY " + ", ".join(
-                         quote_identifier(o.lstrip("-"), db_type) + (" DESC" if o.startswith("-") else "")
+                         _col(o.lstrip("-")) + (" DESC" if o.startswith("-") else "")
                          for o in order_by)
                      if order_by else "")
 
