@@ -14,7 +14,7 @@ SuperBI: self-hosted BI platformu (Power BI / Qlik Sense alternatifi). FastAPI +
 
 ## Konum
 
-- **Çalışma kopyası (tek kaynak):** `/opt/superbi` — git deposu (`main`, `origin/main`). Sunucuda çalışan kod burada.
+- **Çalışma kopyası (tek kaynak):** `/opt/superbi` — git deposu. Canlı kod `release/2026-11-09` (`127c74d`, 2026-11-09). GitHub `main` eski; release PR bekliyor. Özellik dalları `/opt/superbi-wt/<ad>` worktree'lerinde.
 - `/root/superbi/` — yalnız `backend/sbx/` içeriyor (eski/ayrı kopya; `compiler.py` `/opt/superbi/app/services/sbx_compiler.py` ile aynı değil). Canlı kaynak sayılmaz; değiştirilmeden bırakılır.
 - Canlı alan adı: `superbi.bidanismanlik.com.tr` (host nginx: `/` → `frontend/`, `/api/` → `127.0.0.1:8000`).
 
@@ -26,14 +26,15 @@ docker logs --tail 100 superbi
 docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 ```
 
-- Konteyner boşta kalınca AutoSleep durdurur (`Exited (0)`, 2026-10-23'ten beri): bu bilinçli davranış, hata değildir (`/opt/autosleep/ek_projeler.py`).
+- AutoSleep (`/opt/autosleep/ek_projeler.py`, 2026-10-18'den beri Docker'da) boşta kalan konteyneri durdurabilir; bu bilinçli davranıştır, hata değildir. Konteyner 2026-11-09 release'inden beri çalışıyor.
 - Veri: `/opt/superbi/data/superbi.db` (konteynerde `/data`). Günlük yedek: `scripts/backup.sh` → `/opt/superbi/backups/`.
 - Eski kayıt (2026-09-16): servis systemd idi; Docker'a geçildi.
 
 ## Kurallar
 
 - Canlıya dokunan işlemler (restart, deploy, nginx) kullanıcı onayıyla yapılır.
-- Test: önce sandbox'ta doğrula, sonra canlıya al. Görevler sıralı tamamlanır (hatasız, tam test → production).
+- Deploy: önce `/root/yedekler/predeploy-YYYYMMDD-HHMM/` yedeği ve `superbi:pre-*-YYYYMMDD-HHMM` imaj etiketi; sonra `docker compose up -d --build`. Geri dönüş etiketli imajla yapılır.
+- Test: önce sandbox'ta doğrula (`make test`), sonra canlıya al. Görevler sıralı tamamlanır (hatasız, tam test → production).
 - `sqlglot==25.34.1` sabit; hiçbir zaman yükseltilmez. Yükseltme SBX derlemesini kırar; yükseltmeden önce `expression_builder` güvenlik testleri çalıştırılır.
 - `_p()` parantez helper'ı SBX derleyicisinde zorunlu; kaldırılmaz. Elle inşa edilen sqlglot expression'larında SQL'e `exp.Paren()` ile sarılmadan parantez garanti değil.
 - SQL string'i elle yazılmaz; sqlglot AST üzerinde çalışılır.
@@ -64,8 +65,9 @@ docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 - **MSSQL'de LIMIT yok:** `sql_builder` offset=0 için `SELECT TOP n`, offset>0 için `OFFSET...FETCH NEXT` üretir (ORDER BY yoksa `ORDER BY (SELECT NULL)`).
 - **Önizleme dialekti:** Preview endpoint'i seçili bağlantının gerçek `db_type`'ını kullanır (önceden hep sqlite varsayılıyordu).
 - **Çok şemalı DB'ler (MSSQL/PostgreSQL):** `?schema=` parametresi var. AdventureWorks2022 gibi named-schema DB'lerde asıl tablolar dbo DIŞINDA (Sales, Production, Person, HumanResources, Purchasing).
-- **Şema desteği sınırı:** `schema_name` yalnız canlı Sorgu Oluşturucu akışında (preview/run/stream). Kaydedilmiş dataset ve dashboard widget'ları henüz taşımıyor (task.md / backlog.md).
+- **Şema desteği sınırı:** `schema_name` canlı Sorgu Oluşturucu'da ve dataset backend'inde var. Frontend "Dataset Olarak Kaydet" payload'ı `schema_name` ve `calculated_fields`'i henüz göndermiyor (task.md 🔜).
 - **Fernet anahtarı:** `DATALENS_DB_ENCRYPTION_KEY` yedeklenmeli (JWT secret gibi). Kaybolursa kayıtlı parolalar kurtarılamaz. Anahtar DB dosyasından ayrı tutulur.
+- **Zorunlu ortam değişkenleri:** `DATALENS_JWT_SECRET`, `DATALENS_DB_ENCRYPTION_KEY`, `DATALENS_DB` (eksikse uygulama açılmaz). Kayıt kapalı (`DATALENS_ALLOW_REGISTER`), SQLite kökü (`DATALENS_SQLITE_ROOT`) ve DB host listesi (`DATALENS_ALLOWED_DB_HOSTS`) ayrı kurallardır. Değerleri yazılmaz.
 - **Kapasite (eski kayıt 2026-09-16):** 7.8 GB RAM, swap dolu, 12 konteyner. DuckDB ingest öncesi RAM planlaması şart; büyümede 16 GB+ veya ayrı VPS. Güncel değer doğrulanmalı.
 - **Dokümantasyon senkron kaybı:** bkz. Kurallar.
 
@@ -101,4 +103,4 @@ docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 
 ---
 
-Son güncelleme: 2026-10-25 (md seti birleştirme; `docs/CLAUDE.md` içeriği buraya alındı).
+Son güncelleme: 2026-11-09 (release `127c74d` durumu, yetki/RLS, deploy kuralı).

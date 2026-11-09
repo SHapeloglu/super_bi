@@ -1,82 +1,95 @@
 # task.md — SuperBI Görevler
 
-Kaynak: 2026-10-24 yorum taraması, 2026-10-25 denetimi ve md birleştirmesi. Eski `docs/TASKS.md` (2026-10-24) buraya taşındı; yedek: `/root/yedekler/md-birlestirme-20261025/opt/superbi/docs/TASKS.md`.
+Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md birleştirmesi, 2026-11-08/09 güvenlik fazı ve release. Bu dosyadaki tarih çelişkileri (eski kayıtlarda) düzeltilmedi; güncel durum en yeni bölümdedir.
 
 ## 🔜 Sıradaki
 
-### Güvenlik ve hata bulguları (2026-10-24 yorum taraması, kodda `TODO(kontrol)` / `DİKKAT`)
-- [x] 🔴 `api/analyze.py` `get_analysis_results` sahiplik kontrolü — kodda zaten var (2026-10-26 sonrası doğrulandı; 2026-10-27 testle kanıtlandı).
-- [x] 🔴 `api/query.py` `/commit` sahiplik — `QueryExecutor.commit` `user_id` karşılaştırıyor; eski TODO yorumu temizlendi (2026-10-27).
-- [x] 🔴 `auth register` ilk admin yarışı — rol INSERT içinde atomik belirleniyor (2026-10-27).
-- [x] `/api/health` artık DB yolunu döndürmüyor (doğrulandı). `DATALENS_DB` `.env`'de tanımlı; `/tmp` varsayılanı yalnız `.env` eksikse geçerli.
-- [x] `query_executor`: cache anahtarına `sample` zaten dahil; cache isabetinde `commit=True` artık kalıcılaştırıyor (2026-10-27). `mode` bilerek anahtarda yok.
-- [x] `sbx_compiler` `VisitError` — `compile_sbx` içinde yakalanıp `SBXError`'a çevriliyor (doğrulandı).
-- [ ] `granularity_analyzer`: bozuk metinler ("c~apsamında", "eyybo").
-- [ ] `nlq/slot_filler` çıktısı `/api/analyze` ile uyuşmuyor (`table_name` vs `table`); `plan_builder` `limit` gönderiyor, `/run` `sample` bekliyor.
-- [ ] `connector_registry` `--break-system-packages` kullanıyor; `api/history.py` docstring'i güncel değil.
+### Güvenlik ve yetki (2026-11-09 açık kalanlar)
+- [ ] Frontend `schema_name` ve `calculated_fields` göndermiyor: "Dataset Olarak Kaydet" payload'ı (`app.js` ~1186, `buildQueryShape` alanları eksik). Backend hazır (`datasets.py`, `71d11cf`).
+- [ ] Tarayıcıda paylaşılan veri seti widget testi tamamlanmadı (alıcı rolü, 404, kolon alt kümesi, RLS).
+- [ ] Viewer UI: bağlantı oluştur/sil düğmeleri ve açık kayıt formu gizlenmeli (sunucu 403 döner; yalnız arayüz).
+- [ ] Canlı `.env` içinde `DATALENS_ALLOWED_DB_HOSTS` tanımlı (değer doğrulanmadı); eski `127.0.0.1` kayıtları (mssql, mysql, oracle, postgresql) ve host boş kayıt temizlenmeli.
+- [ ] `release/2026-11-09` (`127c74d`) `main`'e PR ile alınmalı; GitHub `main` eski.
 
-### Frontend (2026-10-24 yorum taraması)
-- [ ] Oturum token'ı `localStorage` (`sb_token`) — XSS olursa okunur (risk düşük; kullanıcı verisi `innerHTML`'e girmiyor).
-- [ ] Dashboard Ctrl+Z dinleyicisi (`app.js` ~1762) yalnız "Kapat" ile kaldırılıyor; ekran değişince birikip çoklu geri alma olabilir.
-- [ ] CSV formül enjeksiyonu: `csvEscape` (`app.js` ~2198) `=`, `+`, `-`, `@` ile başlayanları kaçırmıyor.
-- [ ] Admin "Kur" düğmesi yalnız istemcide gizli — sunucu yetkilendirmesi şart (doğrulanmadı).
-- [ ] `api.js`: `connId`, `fingerprint`, dashboard/dataset id yolları `encodeURIComponent`'siz.
-- [ ] Dünya haritası `world.json` jsDelivr'den SRI'siz indiriliyor.
-- [ ] `origClose` ölü kod.
-- [ ] `frontend/` altında eski `.bak*` dosyaları (`app.js.bak`…`bak6`, `api.js.bak2/bak4`, `style.css.bak`) — temizlik.
+### Test ve canlı doğrulama
+- [ ] Integration testleri çalıştırılmadı: `docker compose -f docker-compose.test.yml up -d --wait` + `make test` (env yoksa testler ATLANIR).
+- [ ] Oracle canlı doğrulama yok (identifier kuralı tek merkezden büyük harf; küçük/karma harfli tırnaklı adlar desteklenmez).
+- [ ] Doris canlı doğrulama yok (sürücü pymysql, port 9030, dialect doris).
+- [ ] Undo/redo uçtan uca testi (`app.js`) tamamlanmadı.
+- [ ] README.md güncellemesi: NLQ motoru, analyze API, granularity, paylaşım/RLS, Doris ve test altyapısı README'de yok.
 
-### Test ve dokümantasyon
-- [ ] Undo/redo uçtan uca testi — `app.js`'te uygulandı, e2e test tamamlanmadı.
-- [ ] README.md güncellemesi: NLQ motoru (`app/services/nlq/`), analyze API ve granularity/ilişki katmanı (2026-09-11, 2026-10-05) README'de yok; özellik listesi ve dizin ağacı güncellenecek.
-
-### Çalışma düzeni (2026-10-25 denetimi)
-- [ ] `/opt/superbi` çalışma ağacında 43 dosya commit'lenmemiş (`git status`, son commit 2026-10-05). Commit/temizlik kararı gerekli; kök dizinde `apply_*.py`, `patch_*.py` yama betikleri birikmiş.
-- [ ] `/root/superbi/backend/sbx/` ayrı ve eski kopya (`compiler.py` md5 farklı, `grammar.lark` aynı). Silme/arşiv kararı gerekli.
+### Çalışma düzeni
+- [ ] `/opt/superbi` çalışma ağacında commit'lenmemiş dosyalar ve kök dizindeki `apply_*.py` / `patch_*.py` yama betikleri (`scripts/archive/` altına taşınmış görünüyor; kök kalıntıları doğrulanmalı).
+- [ ] `/root/superbi/backend/sbx/` ayrı ve eski kopya. Silme/arşiv kararı gerekli.
 - [ ] Kök dizinde 0 baytlık `superbi.db`, `pbixdb`, `odoo_test` — veri yolu karışıklığı riski (gerçek DB `data/superbi.db`).
 
+### Frontend (kalan)
+- [ ] Oturum token'ı `localStorage` (`sb_token`) — XSS olursa okunur (risk düşük).
+
 ### Sonraki sıra (öncelik sırasıyla; ayrıntı backlog.md)
-- [ ] Kaydedilmiş dataset / widget şema desteği doğrulaması (`schema_name` yalnız canlı Sorgu Oluşturucu akışında).
-- [ ] DuckDB ingest — tasarım + ilk entegrasyon; `datasets_relationships` üzerinde cross-DB JOIN; incremental refresh.
+- [ ] Kural tabanlı Türkçe NLQ (Kademe 1, LLM yok): `app/services/nlq/` altında kod var; ilk kalıp Top-N. Hangi kalıbın bittiği doğrulanmalı.
+- [ ] DuckDB ingest — cross-DB JOIN, incremental refresh (RAM planlaması şart).
 - [ ] Excel/CSV/JSON dosya kaynağı.
 - [ ] Production VPS kapasite kararı (RAM yükseltme veya ayrı VPS).
 
 ## 🚧 Devam Eden
 
-- [ ] Kural tabanlı Türkçe NLQ (Kademe 1, LLM yok) — ön koşullar tamam. İlk kalıp: Top-N sıralama (`sql_builder` order_by/limit altyapısı hazır). Tasarım onaylandı (2026-08-27). `app/services/nlq/` altında kod var (nlq_engine, intent_patterns, slot_filler, plan_builder, synonyms); hangi kalıbın bittiği doğrulanmalı. Üstteki 2026-10-24 slot/plan uyumsuzluğu bu işe bağlı.
+- [ ] Yok. (Güvenlik fazı 0.1–0.6 ve Faz 1.2/1.3 tamam; açık kalanlar yukarıda.)
 
 ## ✅ Tamamlanan
 
-- [x] 2026-10-25 — Md seti birleştirildi: küçük harfli set (`architect.md`, `CLAUDE.md`, `backlog.md`, `session.md`, `task.md`) tek kaynak; eski `docs/` set (ARCHITECTURE, TASKS, BACKLOG, SESSION, CLAUDE) taşınıp silindi; `docs/OKUBENI_*.md` kaldı; kök CLAUDE.md'deki `@docs/CLAUDE.md` importu kaldırıldı; README atıfları düzeltildi.
-- [x] 2026-10-25 — Md denetimi: kök dizinde `architect.md`, `task.md`, `backlog.md`, `session.md` oluşturuldu; `CLAUDE.md` güncellendi.
-- [x] 2026-10-24 — `frontend/app.js` / `api.js` yorum taraması; bulgular yukarıda.
-- [x] 2026-10-05 — Granularity + ilişki katmanı frontend entegrasyonu; "Analiz Et" DB-geneli (tüm kullanıcı şemaları, sistem hariç). (09-14 günlüğünde de geçiyor; tarih çelişkisi.)
-- [x] 2026-09-14 — Dashboard şablonları (5 preset + Boş; "+ Yeni Dashboard" ve "Şablon Uygula"); Sorgu Oluşturucu şema seçici (`?schema=`); MSSQL TOP/OFFSET-FETCH + şema-qualified FROM; Sorgu Oluşturucu'da "Önerilen İlişkiler"; granularity frontend entegrasyonu.
-- [x] 2026-09-11 — Granularity + ilişki katmanı backend (AdventureWorks2022'de 34 FK ilişkisi doğrulandı).
-- [x] 2026-08-27 — DuckDB PoC (600K satır cross-source JOIN, 873 ms, 27 MB). SBX parantez önceliği (`_p()`) düzeltmesi deploy edildi (4 dialekt, DIVIDE testi 4/4, md5 `39a99468…`). Rekabet analizi (Metabase/Superset/Lightdash) güncellendi.
-- [x] 2026-08-16 — SBX Kademe 1 (grammar + compiler + 17 fonksiyon, 4 dialekt; 5/5 senaryo); DIALECT_MAP güncellendi.
-- [x] Tarih belirsiz — `docs/` klasörü + kapsamlı README.md GitHub'a push edildi (repo: `SHapeloglu/super_bi`). Rekabet araştırması genişletildi (WrenAI, Vanna, Superset SIP-166, Metabase Metabot/X-rays).
-- [x] Temmuz 2026 (tarih tam bilinmiyor) — Bağlantı parolalarının Fernet ile şifrelenmesi ve restart sonrası otomatik yeniden bağlanma (`app/core/crypto.py`, `password_enc`); hesaplanmış alan formüllerinde `;` reddi; sqlglot `==25.34.1` tam sürüm pin. Sunucuda doğrulandı 2026-09-15.
+### 2026-11-09
+- [x] Release `release/2026-11-09` (`127c74d`) canlıya alındı; sağlık kontrolü ok. Yedekler ve imaj etiketleri `session.md` 2026-11-09 kaydında.
+- [x] Doris sürücüsü (pymysql, port 9030, dialect doris) ve test altyapısı (`docker-compose.test.yml`, `tests/integration/`, `.github/workflows/ci.yml`, `Makefile`, `scripts/test.sh`) release'e entegre (canlı doğrulama açık).
+- [x] Frontend hijyeni: CSV formül enjeksiyonu (`frontend/csv_escape.js`, `index.html`'de `app.js`'ten önce), `installDriver` ve id yolları `encodeURIComponent`, `origClose` kaldırıldı, `world.json` ECharts 4.9.0 + SRI, `.bak` dosyaları temizlendi, Ctrl+Z dinleyici düzeltmesi.
+- [x] Backend küçük bulgular: register `IntegrityError` → 409; granularity bozuk metinleri düzeltildi; pip `sys.executable -m pip` (bayraksız); NLQ ↔ analyze sözleşmesi (`normalize_table_profiles`, `sample`).
+- [x] Kaydedilmiş veri setleri: `schema_name` ve `calculated_fields` kalıcı (`datasets.py`, migration `add_column_if_missing`). Frontend gönderimi açık (bkz. 🔜).
+- [x] Driver kurulumu (`POST /api/drivers/{db_type}/install`): kodda admin kontrolü var (`drivers.py`); canlı doğrulanmadı.
+- [x] Oracle identifier tutarlılığı: `quote_identifier` tek merkezden büyük harf.
+- [x] Dataset/widget: `POST /api/datasets/{id}/run` (sahibin bağlantısıyla; alıcı SQL/tablo/bağlantı gönderemez; kolon alt kümesi). Widget'lar paylaşılan veri setini bu uçtan alıyor.
+- [x] Faz 1.3 RLS: `row_rules`, `user_attributes`, `app/core/rls.py`; kurallar `FilterDef` olarak sorguya eklenir; admin atlar; öznitelik eksikse 403; `PUT /api/users/{id}/attributes/{key}` (admin).
+- [x] Güvenlik incelemesi düzeltmeleri: gizli (off) kolon sızıntısı kapatıldı; rol her istekte DB'den okunuyor (rol iptali); yazma izni yalnız adı değiştirebilir (yapı sahibe kilitli); veri seti silinince kurallar silinir; öznitelik doğrulaması.
+- [x] Faz 1.2 paylaşım: `shares` tablosu, `app/core/sharing.py`, `/api/shares`; dataset/dashboard read/write; rol paylaşımı yalnız okuma; yetkisizde 404; editör rolü.
+- [x] Güvenlik Faz 0.1–0.6 (2026-11-08): SQLite politikası (`sqlite_policy.py`, `DATALENS_SQLITE_ROOT`); bağlantı yalnız admin; açık kayıt kapalı (`DATALENS_ALLOW_REGISTER`); `POST /api/users` (admin); host politikası (`host_policy.py`, `DATALENS_ALLOWED_DB_HOSTS`, loopback/link-local engelli); URL.create ile escape; zorunlu sırlar (`startup_check.py`); hata mesajları sabit.
+- [x] Güvenlik ve yetki testleri: `tests/security/run_all.sh`, `tests/access/`, `tests/test_yetki.py` (sürüm öncesi kırmızı-yeşil akışıyla).
+- [x] 2026-11-09 — md seti (kök beş dosya) 2026-11-09 durumuna getirildi (`docs/md-2026-11-09` branch).
 
+### 2026-10-27 — #212 yetki/hata bulguları
+- [x] `get_analysis_results` sahiplik kontrolü (zaten vardı; testle doğrulandı).
+- [x] `/commit` sahiplik: `QueryExecutor.commit` `user_id` karşılaştırıyor.
+- [x] İlk-admin yarışı: rol INSERT içinde atomik (`CASE WHEN COUNT(*)=0`).
+- [x] Cache isabetinde `commit=True` kalıcılaştırılıyor.
+- [x] `/api/health` yol sızıntısı kapalı; `VisitError` `compile_sbx` içinde `SBXError`'a çevriliyor.
+- [x] `UserRepository.count()` kullanılıyor (`auth.py` ilk-kullanıcı kontrolü); "kaldırılabilir" notu geçersiz.
 
-## 🔐 #212 yetki/hata bulguları — çözüm karşılaştırması (2026-10-27)
+### 2026-10-25 — Md birleştirme ve denetim
+- [x] Küçük harfli set (`architect.md`, `CLAUDE.md`, `backlog.md`, `session.md`, `task.md`) tek kaynak; eski `docs/` set taşınıp silindi; `docs/OKUBENI_*.md` kaldı.
+- [x] Kök `CLAUDE.md` içindeki `@docs/CLAUDE.md` importu kaldırıldı; içerik `CLAUDE.md`'ye alındı.
 
-Yedek: `/root/yedekler/superbi-oncesi-20261027/` (app + task.md). Canlı DB/servise dokunulmadı; commit yok. Not: 5 madde kodda önceden giderilmiş çıktı, yalnız md/yorum geride kalmıştı.
+### 2026-10-24 — Yorum taraması
+- [x] `frontend/app.js` / `api.js` yorum taraması; bulgular bu dosyanın ilgili bölümlerine dağıtıldı.
 
-| Madde | Seçenekler (fayda / maliyet / risk) | Karar | Durum |
-|---|---|---|---|
-| `get_analysis_results` sahiplik | A) Fonksiyon içinde `repo.get` + owner/admin kontrolü: basit, 404 ile varlık sızdırmaz, risk düşük. B) Ortak `Depends(require_conn_owner)`: tekrarı azaltır ama tüm analyze uçlarını dokunur, orta risk. | A (zaten var; `resolve_connection_engine` ile birleştirme sonra) | Doğrulandı + test |
-| `/commit` cache_key sahipliği | A) `executor.commit` içinde `entry.user_id` karşılaştırma: kilit altında atomik, tek yer. B) Endpoint'te ayrı kontrol: çift mantık, yarış riski. | A (zaten var) | Yorum düzeltildi + test |
-| İlk-admin yarışı | A) INSERT içinde `CASE WHEN COUNT(*)=0`: atomik, süreçler arası güvenli, şema değişmez. B) `threading.Lock`: tek süreçte yeter, çoklu worker'da yetmez. C) Ortam değişkeniyle admin tohumlama: en sağlam ama kurulum akışını değiştirir. | A | Uygulandı + test (8 thread, tek admin) |
-| Cache isabetinde commit | A) İsabette `commit=True` ise kayıt kalıcılaştır (TTL kısaltılmaz). B) Cache anahtarına `commit` ekle: çift kayıt, bellek artar. | A | Uygulandı + test |
-| `/api/health` yol sızıntısı | Zaten kaldırılmış. | - | Doğrulandı |
-| `VisitError` | Zaten `compile_sbx` içinde çevriliyor. | - | Doğrulandı |
-| Cache anahtarı `sample`/`mode` | `sample` zaten var; `mode` bilerek yok (memory modu live kaydı okuyabilsin). Anahtara eklemek memory/live ayrımını bozar. | Değiştirme | Kapatıldı |
-| NLQ ↔ analyze alan uyumsuzluğu (`table_name`/`table`, `limit`/`sample`) | A) `plan_builder` çıktısına `sample` ekle + `slot_filler` girişinde dönüştürücü (adaptör): küçük ama NLQ henüz canlı akışa bağlı değil, doğrulama verisi yok. B) Analyze çıktısını NLQ biçimine uydur: API sözleşmesini bozar, riskli. | A önerilir, uygulanmadı (NLQ henüz bağlanmadı, uçtan uca test verisi yok); bağlama işi başlayınca birlikte yapılacak | Tasarım |
+### 2026-10-05 / 2026-09-14
+- [x] Granularity + ilişki katmanı frontend entegrasyonu; "Analiz Et" DB-geneli (tüm kullanıcı şemaları, sistem hariç). (Tarih çelişkisi: 09-14 kaydında da geçiyor.)
+- [x] Dashboard şablonları (5 preset + Boş; "+ Yeni Dashboard" ve "Şablon Uygula").
+- [x] Sorgu Oluşturucu şema seçici (`?schema=`); MSSQL TOP/OFFSET-FETCH + şema-qualified FROM; "Önerilen İlişkiler".
 
-### Test
-`/opt/superbi/tests/test_yetki.py` (6 test, yalnız bellek içi SQLite; çalıştırma: `venv/bin/python tests/test_yetki.py`): 6/6 geçti. Sınır: venv'de pytest/httpx yok, HTTP katmanı (TestClient) denenmedi; sahiplik fonksiyon çağrısıyla test edildi.
+### 2026-09-11
+- [x] Granularity + ilişki katmanı backend (AdventureWorks2022'de 34 FK ilişkisi doğrulandı).
 
-### Yeni küçük bulgular
-- [ ] `register`: kullanıcı adı kontrolü «sorgula sonra ekle»; eşzamanlı aynı ad UNIQUE ihlalinde 500 dönebilir (409 olmalı) — `IntegrityError` yakalanmalı.
-- [ ] `UserRepository.count()` artık kullanılmıyor; kaldırılabilir.
-- [ ] Değişikliklerin canlıya alınması için konteyner yeniden derlemesi gerekir (kullanıcı onayıyla).
+### 2026-08-27
+- [x] DuckDB PoC (600K satır cross-source JOIN, 873 ms, 27 MB).
+- [x] SBX parantez önceliği (`_p()`) düzeltmesi deploy edildi (4 dialekt; md5 `39a99468…`).
+- [x] Rekabet analizi (Metabase/Superset/Lightdash) güncellendi.
+
+### 2026-08-16
+- [x] SBX Kademe 1 (grammar + compiler + 17 fonksiyon, 4 dialekt; 5/5 senaryo); DIALECT_MAP güncellendi.
+
+### Tarih belirsiz / Temmuz 2026
+- [x] `docs/` klasörü + README.md GitHub'a push edildi (repo: `SHapeloglu/super_bi`).
+- [x] Bağlantı parolalarının Fernet ile şifrelenmesi ve restart sonrası otomatik yeniden bağlanma (`app/core/crypto.py`, `password_enc`); hesaplanmış alan formüllerinde `;` reddi; sqlglot `==25.34.1` tam sürüm pin. Sunucuda doğrulandı 2026-09-15.
+
+## Çalışma notları
+
+- Yedek ve deploy ayrıntıları: `session.md`.
+- Planlanmamış fikirler ve teknik borç: `backlog.md`.
