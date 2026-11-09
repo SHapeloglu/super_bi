@@ -79,6 +79,13 @@ DRIVER_MAP: dict[str, dict[str, str]] = {
     "mysql":      {"module": "pymysql",   "package": "PyMySQL",         "dialect": "mysql+pymysql"},
     "mssql":      {"module": "pyodbc",    "package": "pyodbc",          "dialect": "mssql+pyodbc"},
     "oracle":     {"module": "oracledb",  "package": "oracledb",        "dialect": "oracle+oracledb"},
+    # Apache Doris: FE, MySQL protokolünü konuşur (varsayılan sorgu portu 9030). Doris için
+    # SQLAlchemy'nin resmi bir dialect'i yok; bu yüzden mysql+pymysql ile bağlanılır.
+    # Şema listeleme (SHOW DATABASES / SHOW FULL TABLES / SHOW FULL COLUMNS) MySQL dialect'inin
+    # kullandığı komutlardır ve Doris'te çalışır; PK/FK metadata'sı boş dönebilir (Doris FK
+    # constraint desteklemez). Doris'te catalog kavramı (internal / external catalog) bu katmanda
+    # yok: bağlantı internal catalog'a düşer, "database" alanı MySQL'deki gibi şema görevi görür.
+    "doris":      {"module": "pymysql",   "package": "PyMySQL",         "dialect": "mysql+pymysql"},
 }
 
 
@@ -196,6 +203,9 @@ class ConnectorRegistry:
         host     = params.get("host") or "localhost"
         port     = params.get("port")
         database = params.get("database") or ""
+        # Doris FE varsayılan sorgu portu 9030 (MySQL'in 3306'sı değil).
+        if db_type == "doris" and not port:
+            port = 9030
 
         # Faz 0.4: host politikası (loopback / metadata IP / allowlist). Create ve yeniden bağlanma buradan geçer.
         from app.core.host_policy import check_db_host
