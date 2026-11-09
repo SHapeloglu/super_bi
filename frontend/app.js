@@ -345,56 +345,60 @@ async function renderConnectionsView(root) {
   root.appendChild(el("h2", {}, "Veritabanı Bağlantıları"));
 
   const formCard = el("div", { class: "card" });
-  formCard.appendChild(el("h3", {}, "Yeni Bağlantı Ekle"));
+  if (!SuperBIRole.shouldShowConnectionForm(state.role)) {
+    formCard.appendChild(el("p", { class: "muted" }, "Bağlantı ekleme yalnız yönetici içindir."));
+  } else {
+    formCard.appendChild(el("h3", {}, "Yeni Bağlantı Ekle"));
 
-  const dbTypeSel = el("select", { id: "conn-db-type" }, [
-    el("option", { value: "sqlite" }, "SQLite"),
-    el("option", { value: "postgresql" }, "PostgreSQL"),
-    el("option", { value: "mysql" }, "MySQL"),
-    el("option", { value: "mssql" }, "SQL Server"),
-    el("option", { value: "oracle" }, "Oracle"),
-  ]);
+    const dbTypeSel = el("select", { id: "conn-db-type" }, [
+      el("option", { value: "sqlite" }, "SQLite"),
+      el("option", { value: "postgresql" }, "PostgreSQL"),
+      el("option", { value: "mysql" }, "MySQL"),
+      el("option", { value: "mssql" }, "SQL Server"),
+      el("option", { value: "oracle" }, "Oracle"),
+    ]);
 
-  const hostInput = el("input", { id: "conn-host", placeholder: "localhost" });
-  const portInput = el("input", { id: "conn-port", placeholder: "5432", type: "number" });
-  const dbInput = el("input", { id: "conn-database", placeholder: "/path/to/file.db  ya da  veritabani_adi" });
-  const userInput = el("input", { id: "conn-user", placeholder: "kullanıcı adı (sqlite'ta boş bırakın)" });
-  const passInput = el("input", { id: "conn-password", type: "password", placeholder: "şifre (sqlite'ta boş bırakın)" });
+    const hostInput = el("input", { id: "conn-host", placeholder: "localhost" });
+    const portInput = el("input", { id: "conn-port", placeholder: "5432", type: "number" });
+    const dbInput = el("input", { id: "conn-database", placeholder: "/path/to/file.db  ya da  veritabani_adi" });
+    const userInput = el("input", { id: "conn-user", placeholder: "kullanıcı adı (sqlite'ta boş bırakın)" });
+    const passInput = el("input", { id: "conn-password", type: "password", placeholder: "şifre (sqlite'ta boş bırakın)" });
 
-  const grid = el("div", { class: "grid-3" }, [
-    el("div", {}, [el("label", {}, "Veritabanı Tipi"), dbTypeSel]),
-    el("div", {}, [el("label", {}, "Host"), hostInput]),
-    el("div", {}, [el("label", {}, "Port"), portInput]),
-    el("div", {}, [el("label", {}, "Veritabanı / Dosya Yolu"), dbInput]),
-    el("div", {}, [el("label", {}, "Kullanıcı"), userInput]),
-    el("div", {}, [el("label", {}, "Şifre"), passInput]),
-  ]);
-  formCard.appendChild(grid);
+    const grid = el("div", { class: "grid-3" }, [
+      el("div", {}, [el("label", {}, "Veritabanı Tipi"), dbTypeSel]),
+      el("div", {}, [el("label", {}, "Host"), hostInput]),
+      el("div", {}, [el("label", {}, "Port"), portInput]),
+      el("div", {}, [el("label", {}, "Veritabanı / Dosya Yolu"), dbInput]),
+      el("div", {}, [el("label", {}, "Kullanıcı"), userInput]),
+      el("div", {}, [el("label", {}, "Şifre"), passInput]),
+    ]);
+    formCard.appendChild(grid);
 
-  const createBtn = el("button", { class: "btn btn-primary" }, "Bağlantı Oluştur");
-  createBtn.style.marginTop = "12px";
-  formCard.appendChild(createBtn);
+    const createBtn = el("button", { class: "btn btn-primary" }, "Bağlantı Oluştur");
+    createBtn.style.marginTop = "12px";
+    formCard.appendChild(createBtn);
 
-  createBtn.addEventListener("click", () =>
-    withBusy(createBtn, async () => {
-      try {
-        const payload = {
-          db_type: dbTypeSel.value,
-          host: hostInput.value || "",
-          port: portInput.value ? parseInt(portInput.value, 10) : null,
-          database: dbInput.value,
-          user: userInput.value || null,
-          password: passInput.value || null,
-        };
-        if (!payload.database) { toast("Veritabanı / dosya yolu zorunlu", "error"); return; }
-        const res = await api.createConnection(payload);
-        toast(`Bağlantı oluşturuldu: ${res.conn_id}`, "success");
-        await refreshConnections();
-        renderView("connections");
-      } catch (e) { handleApiError(e, "Bağlantı oluşturulamadı"); }
-    })
-  );
+    createBtn.addEventListener("click", () =>
+      withBusy(createBtn, async () => {
+        try {
+          const payload = {
+            db_type: dbTypeSel.value,
+            host: hostInput.value || "",
+            port: portInput.value ? parseInt(portInput.value, 10) : null,
+            database: dbInput.value,
+            user: userInput.value || null,
+            password: passInput.value || null,
+          };
+          if (!payload.database) { toast("Veritabanı / dosya yolu zorunlu", "error"); return; }
+          const res = await api.createConnection(payload);
+          toast(`Bağlantı oluşturuldu: ${res.conn_id}`, "success");
+          await refreshConnections();
+          renderView("connections");
+        } catch (e) { handleApiError(e, "Bağlantı oluşturulamadı"); }
+      })
+    );
 
+  }
   root.appendChild(formCard);
 
   const listCard = el("div", { class: "card" });
@@ -1185,7 +1189,7 @@ function renderResultCard(resultCard) {
           group_by: shape.group_by, order_by: shape.order_by,
         };
 
-        const existing = await api.listDatasets();
+        const existing = SuperBIRole.writableDatasets(await api.listDatasets(), state.role, state.userId);
         const match = existing.find((d) => d.name.trim().toLowerCase() === name.trim().toLowerCase());
 
         if (match) {
