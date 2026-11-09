@@ -40,6 +40,13 @@ def quote_identifier(identifier: str, dialect: str = "sqlite") -> str:
     ayrı ayrı whitelist'ten geçirir, sonra ayrı ayrı tırnaklayıp birleştirir.
     Böylece 'tablo"."zararlı; DROP TABLE x --' gibi girişler tek parça
     olarak regex'e takılır ve reddedilir.
+
+    Oracle: tek merkezden büyük harf. Oracle tırnaklı identifier'ları büyük/
+    küçük harfe duyarlı tutar; bu yüzden her parça .upper() yapılıp tırnaklanır.
+    Tablo, join, filtre, group/order ve formül kolonları böylece aynı biçimde
+    çıkar. Dönüşüm yalnız burada yapılır; sql_builder tekrar büyütmez.
+    SINIR: Oracle'da bilinçli olarak küçük/karma harfli tırnaklı tablo veya kolon
+    adı kullanılan kurulumlar desteklenmez (örn. "MixedCase" tablosu).
     """
     if not identifier or not isinstance(identifier, str):
         raise ValueError(f"Geçersiz identifier: {identifier!r}")
@@ -55,6 +62,8 @@ def quote_identifier(identifier: str, dialect: str = "sqlite") -> str:
     # MySQL ailesinde (mysql, doris) çift tırnak string literal'dir; identifier backtick ile yazılır.
     if dialect in ("mysql", "doris"):
         return ".".join(f"`{p}`" for p in parts)
+    if dialect == "oracle":
+        return ".".join(f'"{p.upper()}"' for p in parts)
     return ".".join(f'"{p}"' for p in parts)
 
 

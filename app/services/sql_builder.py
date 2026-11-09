@@ -161,12 +161,7 @@ class SQLBuilder:
         Sayfalama db_type'a göre yazılır (LIMIT, TOP veya FETCH). limit en fazla satır sayısı, offset atlanacak satır sayısıdır.
         Geçersiz kolon adı ya da ifade ValueError fırlatır.
         """
-        # Oracle'da tablo ve kolon adları büyük harfle yazılır.
-        if db_type == "oracle":
-            base_table = base_table.upper()
-            fields = {k.upper(): v for k, v in fields.items()}
-            if schema:
-                schema = schema.upper()
+        # Oracle büyütmesi quote_identifier'da tek merkezden yapılır (burada tekrar yok).
         select_cols = self._select_columns(base_table, fields, db_type)
         select_cols += self._calculated_columns(
             fields, calculated_fields or [], db_type, formula_only_columns

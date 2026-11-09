@@ -74,6 +74,11 @@ def validate_and_compile(formula: str, db_type: str, allowed_columns: set[str]) 
     if dialect is None:
         raise ExpressionError(f"Desteklenmeyen veritabanı tipi: {db_type!r}")
 
+    # Oracle: quote_identifier kolonları büyük harfe çevirir; formül kolonları da aynı biçimde karşılaştırılır.
+    fold_case = db_type == "oracle"
+    if fold_case:
+        allowed_columns = {c.upper() for c in allowed_columns}
+
     # ADIM 1: SBX olarak dene (eğer [ varsa, SBX olabilir)
     # Köşeli parantez '[' varsa formül önce SBX (SuperBI ifade dili) olarak denenir.
     if "[" in formula and compile_sbx is not None:
@@ -83,7 +88,7 @@ def validate_and_compile(formula: str, db_type: str, allowed_columns: set[str]) 
             # SBX'ten üretilen SQL de tekrar ayrıştırılıp aynı kurallarla kontrol edilir.
             tree = sqlglot.parse_one(compiled_sql, read=dialect)
             if tree:
-                _validate_node_tree(tree, allowed_columns)
+                _validate_node_tree(tree, allowed_columns, fold_case)
                 return compiled_sql
         # DİKKAT: Burada her hata sessizce yutulur ve SQL denemesine geçilir. SBX'in neden çalışmadığı kullanıcıya gösterilmez.
         except (SBXError, ExpressionError, Exception):
@@ -99,7 +104,7 @@ def validate_and_compile(formula: str, db_type: str, allowed_columns: set[str]) 
     if tree is None:
         raise ExpressionError("Formül boş bir ifadeye çözüldü")
 
-    _validate_node_tree(tree, allowed_columns)
+    _validate_node_tree(tree, allowed_columns, fold_case)
 
     try:
         compiled = tree.sql(dialect=dialect)
@@ -112,7 +117,7 @@ def validate_and_compile(formula: str, db_type: str, allowed_columns: set[str]) 
     return compiled
 
 
-def _validate_node_tree(root: exp.Expression, allowed_columns: set[str]) -> None:
+def _validate_node_tree(root: exp.Expression, allowed_columns: set[str], fold_case: bool = False) -> None:
     """Formül ağacındaki her düğümü kontrol eder. İzin listesinde olmayan bir düğüm, izinsiz bir kolon adı veya yorum varsa ExpressionError fırlatır."""
     # Ağaçtaki her düğüm tek tek kontrol edilir.
     for node in root.walk():
@@ -122,7 +127,7 @@ def _validate_node_tree(root: exp.Expression, allowed_columns: set[str]) -> None
                 f"({node.sql() if hasattr(node, 'sql') else node!r})"
             )
         if isinstance(node, exp.Column):
-            col_name = node.name
+            col_name = node.name.upper() if fold_case else node.name
             # Kolon adı, bu sorguda var olan kolonlardan biri olmalı (whitelist).
             if col_name not in allowed_columns:
                 raise ExpressionError(f"Bilinmeyen veya izin verilmeyen kolon: {col_name!r}")
