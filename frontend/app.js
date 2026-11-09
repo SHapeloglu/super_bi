@@ -1183,11 +1183,7 @@ function renderResultCard(resultCard) {
       if (!name) return;
       try {
         const shape = buildQueryShape();
-        const payload = {
-          name, conn_id: shape.conn_id, base_table: shape.base_table,
-          fields: shape.fields, joins: shape.joins, filters: shape.filters,
-          group_by: shape.group_by, order_by: shape.order_by,
-        };
+        const payload = window.SuperBIDatasetPayload.buildDatasetPayload(shape, name);
 
         const existing = SuperBIRole.writableDatasets(await api.listDatasets(), state.role, state.userId);
         const match = existing.find((d) => d.name.trim().toLowerCase() === name.trim().toLowerCase());
