@@ -136,3 +136,9 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - `DATALENS_JWT_SECRET` ve `DATALENS_DB_ENCRYPTION_KEY` yedeği: kaybolursa oturumlar ve kayıtlı parolalar kurtarılamaz (değerler md'de yok).
 
 **Sıradaki adım:** Frontend payload'ına `schema_name` ve `calculated_fields` eklemek; ardından tarayıcıda paylaşılan veri seti widget testi.
+
+## 2026-11-09 (öğleden sonra) — son durum
+- Join'li sorgularda GROUP BY/ORDER BY kolonları base_table ile nitelendi (`e1f63c4`); canlıya alındı (yedek `/root/yedekler/predeploy-20261109-1414`, imaj `superbi:pre-join-20261109-1414`).
+- "Dataset Olarak Kaydet": isim eşleşmesi yalnız kullanıcının kendi veri setleriyle yapılır (`f177f22`, frontend). Admin dahil kimse başkasının veri setini isimle sessizce güncellemez.
+- Tarayıcı testi: admin ve viewer kaydetme akışı GEÇTİ (18/18). Viewer, yalnız bağlantısı olduğunda kaydedebilir; viewer bağlantı oluşturamadığı için normal arayüzde kaydetme yolu kapalıdır (bilinçli sınır).
+- Release ve main eşit: `main` PR #4 ile `f177f22` içeriyor.
