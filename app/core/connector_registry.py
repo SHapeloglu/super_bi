@@ -73,6 +73,11 @@ DRIVER_MAP: dict[str, dict[str, str]] = {
 }
 
 
+def _pip_install_command(package: str) -> list[str]:
+    """Sürücü kurulum komutunu döner: çalışan yorumlayıcının pip'i, bayraksız. Kabuk kullanılmaz; liste olarak çalıştırılır."""
+    return [sys.executable, "-m", "pip", "install", package]
+
+
 class ConnectorRegistry:
     """
     Canlı SQLAlchemy engine'lerini tutar (conn_id -> Engine).
@@ -114,9 +119,10 @@ class ConnectorRegistry:
 
         package = DRIVER_MAP[db_type]["package"]
         try:
-            # Paket adı ayrı argüman olarak verilir ve kabuk (shell) kullanılmaz. DİKKAT: --break-system-packages sistem Python'una doğrudan kurar; diğer paketleri etkileyebilir.
+            # Paket adı ayrı argüman olarak verilir ve kabuk (shell) kullanılmaz. Kurulum, çalışan uygulamanın
+            # kendi Python'una (sys.executable) yapılır; sistem paketlerini değiştiren bayraklar kullanılmaz.
             result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--break-system-packages", package],
+                _pip_install_command(package),
                 capture_output=True, text=True, timeout=120,
             )
         except Exception as e:  # subprocess başlatılamadı

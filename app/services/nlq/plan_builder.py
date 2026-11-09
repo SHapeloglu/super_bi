@@ -64,8 +64,8 @@ def build_top_n_plan(intent, slots, conn_id):
         ],
         # Ölçü kolonu sadece SUM içinde kullanılır; ham SELECT kolonu olarak eklenmez (GROUP BY hatası olmasın diye).
         "formula_only_columns": [slots.metric_col],
-        # TODO(kontrol): /api/query/run isteğinde satır sayısı alanı 'sample' (varsayılan 100). Bu plan 'limit' anahtarı üretiyor; /run'a aynen gönderilirse N uygulanmaz. Kontrol edilmeli.
-        "limit": intent.n,
+        # /api/query/run satır sayısını 'sample' alanından okur (QueryRunRequest); 'limit' tanınmaz ve yok sayılır.
+        "sample": intent.n,
     }
 
     # _meta: izleme ve hata ayıklama için ek bilgi. QueryRunRequest bu alanı kullanmaz.

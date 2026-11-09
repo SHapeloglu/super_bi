@@ -1,12 +1,12 @@
 """
 /api/history — sorgu geçmişi + versiyonlama (auth bağlı)
 
-Not: query_history tablosunda owner_id kolonu yok — conn_id üzerinden
-dolaylı izolasyon sağlanır (kullanıcı sadece kendi conn_id'lerini görebilir,
-get_connection_engine zaten bunu kontrol ediyor). add_history conn_id
-sahiplik kontrolü yapmaz çünkü /api/query/run zaten kontrol etmiş olur.
+Not: query_history tablosunda owner_id kolonu yok — sahiplik conn_id üzerinden
+kontrol edilir. add_history, get_groups (conn_id verilirse), get_versions ve
+delete_group, bağlantının sahibini (admin değilse) _check_conn_access ile doğrular;
+bağlantı yoksa ya da başkasınınsa 404 döner. get_recent, kullanıcının kendi
+bağlantılarına göre filtreler.
 """
-# TODO(kontrol): Üstteki docstring 'add_history sahiplik kontrolü yapmaz' diyor; ama add_history aslında _check_conn_access çağırıyor. Docstring güncel olmayabilir.
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
