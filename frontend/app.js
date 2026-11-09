@@ -5,6 +5,8 @@
  * Bu dosyayı index.html ve api.js ile birlikte düşünün: HTML'deki id'lere (qs("#...")) göre DOM'a bağlanır.
  */
 import { createApiClient } from "./api.js";
+// CSV yardımcıları csv_escape.js (klasik script, index.html'de app.js'ten önce yüklenir) içinden gelir.
+const { rowsToCsv } = window.SuperBICsv;
 
 /* ============================================================
  * Ayarlar + global state
@@ -1764,9 +1766,10 @@ function renderDashboardEditor(root) {
   root.appendChild(card);
 
   // Klavye kısayolları — sadece dashboard editörü açıkken aktif
-  // DİKKAT: Bu dinleyici yalnız 'Kapat' düğmesine basılınca kaldırılır. Ekran başka bir görünüme geçerse kaldırılmaz; her yeniden çizimde yeni bir dinleyici eklenir. Sonuçta Ctrl+Z tek basışta birden fazla kez çalışabilir.
+  // Tek referans (window.__dashKeyHandler): her çizimde öncekini kaldırıp yenisini ekleriz; Ctrl+Z birikip çoklu geri almaya yol açmaz.
   function onKeyDown(e) {
     // Input/textarea odakta ise kısayolları devreye alma
+    if (!qs("#dash-canvas-page")) return; // editör ekranda değilse (başka görünüme geçildi) kısayol çalışmasın
     const tag = document.activeElement?.tagName?.toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
     if (e.ctrlKey && e.key === "z") { e.preventDefault(); undoDashboard(); }
@@ -1777,8 +1780,6 @@ function renderDashboardEditor(root) {
   window.__dashKeyHandler = onKeyDown;
   document.addEventListener("keydown", onKeyDown);
   // Editör kapandığında dinleyiciyi temizle
-  // TODO(kontrol): origClose hiçbir yerde kullanılmıyor (ölü kod). Silinebilir, ama davranışı değiştirmemek için bu sürümde bırakıldı.
-  const origClose = closeBtn.onclick;
   closeBtn.addEventListener("click", () => document.removeEventListener("keydown", onKeyDown), { once: true });
 
   // İlk geçmiş snapshot'ı al (editör açıldığında başlangıç durumu)
@@ -1823,7 +1824,8 @@ let worldMapPromise = null;
  */
 function ensureWorldMapRegistered() {
   if (!worldMapPromise) {
-    worldMapPromise = fetch("https://cdn.jsdelivr.net/npm/echarts@5.5.1/map/json/world.json")
+    // Sabit sürüm + SRI (sha384). echarts@5.5.1 paketinde map/ klasörü yok (404), bu yüzden 4.9.0 sürümündeki aynı dosya kullanılır.
+    worldMapPromise = fetch("https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json", { integrity: "sha384-nUdcDs8/D1tUu4Ixp0lpEEGjeGxyoTHy6NW9H0A9J6JBHm1Zg19hIZxESS6jgLF7" })
       .then((r) => { if (!r.ok) throw new Error("world.json indirilemedi"); return r.json(); })
       .then((geoJson) => { window.echarts.registerMap("world", geoJson); return true; });
   }
@@ -2202,30 +2204,6 @@ function formatNumber(n) {
 
 /* ---- Export ---- */
 
-/**
- * CSV hücresini güvenli hale getirir. Değer ; " veya satır sonu içeriyorsa tırnak içine alınır ve içindeki tırnaklar çift tırnak yapılır. null/undefined boş metin olur.
- * = + - @ (ve TAB/CR) ile başlayan metin değerler Excel'de formül olarak çalışabilir (CSV formül enjeksiyonu); bu yüzden metin değerlerin başına ' eklenir.
- */
-function csvEscape(val) {
-  if (val === null || val === undefined) return "";
-  let s = String(val);
-  // Metin değer formül olarak yorumlanmasın diye başına ' eklenir (sayılar olduğu gibi kalır)
-  if (typeof val === "string" && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
-  if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-  return s;
-}
-
-/**
- * Kolon adları ve satırları noktalı virgüllü (;) CSV metnine çevirir. Türkçe ayarlı Excel genellikle virgül yerine noktalı virgül ayırıcısı bekler; bu yüzden ; seçildi.
- * Başta BOM (\uFEFF) eklenir ki Excel Türkçe karakterleri (ğ, ş, ı) doğru okusun. Satırlar \r\n ile ayrılır.
- * Parametreler: cols = başlık dizisi; rows = satır dizileri.
- */
-function rowsToCsv(cols, rows) {
-  const BOM = "\uFEFF";
-  const lines = [cols.map(csvEscape).join(";")];
-  for (const row of rows) lines.push(row.map(csvEscape).join(";"));
-  return BOM + lines.join("\r\n");
-}
 
 /**
  * Verilen içeriği dosya olarak indirtir. Tarayıcıda geçici bir bağlantı (Blob URL) oluşturup gizli bir <a> öğesine tıklatır.

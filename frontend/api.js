@@ -126,7 +126,7 @@ export function createApiClient(baseUrl, getToken) {
     /**
      * Belirtilen veritabanı türü için sürücü (driver) kurulumunu başlatır. Kurulum uzun sürebilir.
      */
-    installDriver: (dbType) => request("POST", `/api/drivers/${dbType}/install`),
+    installDriver: (dbType) => request("POST", `/api/drivers/${encodeURIComponent(dbType)}/install`),
 
     // ---- query ----
     previewSql: (body) => request("POST", "/api/query/preview", body, { noAuth: true }),
