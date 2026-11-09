@@ -1,11 +1,25 @@
+/**
+ * SuperBI ön yüzünün ana dosyası (vanilla JS, framework yok).
+ * Tarayıcıda index.html tarafından module olarak yüklenir ve tüm ekranları (bağlantılar, sorgu, geçmiş, dashboard, sürücüler) bu dosyadan yönetir.
+ * Veriyi api.js içindeki createApiClient üzerinden backend'den alır. Oturum token'ı localStorage'da tutulur; tema tercihi de yine localStorage'da saklanır.
+ * Bu dosyayı index.html ve api.js ile birlikte düşünün: HTML'deki id'lere (qs("#...")) göre DOM'a bağlanır.
+ */
 import { createApiClient } from "./api.js";
+// CSV yardımcıları csv_escape.js (klasik script, index.html'de app.js'ten önce yüklenir) içinden gelir.
+const { rowsToCsv } = window.SuperBICsv;
 
 /* ============================================================
  * Ayarlar + global state
  * ==========================================================*/
 
+// API adresi. Sunucu başka bir adreste çalışıyorsa window.__SUPERBI_API_BASE__ ile verilebilir; yoksa boş kalır ve istekler aynı sunucuya gider.
 const API_BASE = window.__SUPERBI_API_BASE__ || "";
 
+/**
+ * Uygulamanın tüm durumunu (state) tuttuğu tek nesne.
+ * Neden: Ekranlar arasında veri paylaşmak ve yenilemeden sonra neyin seçili olduğunu hatırlamak için. Değer değişince ilgili render fonksiyonu çağrılarak ekran güncellenir.
+ * Oturum alanları (token, role, userId, username) tarayıcı yenilenince kaybolmasın diye localStorage'dan okunarak başlatılır.
+ */
 const state = {
   token: localStorage.getItem("sb_token") || null,
   role: localStorage.getItem("sb_role") || null,
@@ -40,6 +54,7 @@ const state = {
   showTemplatePicker: false,
   selectedWidgetId: null,
 
+  // Dashboard geri-al/yinele (undo/redo) geçmişi. dashHistory anlık görüntülerin listesi, dashHistoryIndex ise şu an hangi görüntüde olduğumuzu gösterir (-1 = hiç kayıt yok).
   // Undo/Redo
   dashHistory: [],
   dashHistoryIndex: -1,
@@ -48,15 +63,31 @@ const state = {
   _widgetColumnsCache: [],
 };
 
+// API istemcisi. Token her istekte state.token'dan okunsun diye bir fonksiyon olarak verilir; böylece giriş/çıkış sonrası istemciyi yeniden kurmaya gerek kalmaz.
 const api = createApiClient(API_BASE, () => state.token);
 
 /* ============================================================
  * Küçük yardımcılar
  * ==========================================================*/
 
+/**
+ * document.querySelector kısaltması. Tek bir öğe döndürür; bulunamazsa null döner, bu yüzden kullanmadan önce varlığından emin olun.
+ * Parametreler: sel = CSS seçici (örn. "#auth-form"), root = arama yapılacak üst öğe (varsayılan tüm sayfa).
+ */
 function qs(sel, root = document) { return root.querySelector(sel); }
+/**
+ * querySelectorAll kısaltması. Eşleşen tüm öğeleri GERÇEK bir diziye çevirip döndürür (forEach, filter gibi dizi metodları kullanılabilsin diye). Eşleşme yoksa boş dizi döner.
+ */
 function qsa(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
 
+/**
+ * DOM öğesi üretmek için kısa yardımcı. Ham document.createElement yazmayı azaltır.
+ * Parametreler:
+ * - tag: oluşturulacak etiket ("div", "button" gibi).
+ * - attrs: özellikler. "class" className'e, "html" innerHTML'e yazılır (DİKKAT: html ile gelen metin HTML olarak çalışır; kullanıcı verisi buraya konmamalı). "onclick" gibi on ile başlayan ve fonksiyon olan değerler olay dinleyicisine dönüşür. Diğerleri setAttribute ile eklenir; null/undefined olanlar atlanır.
+ * - children: alt öğe, metin (string) veya bunların dizisi. Metinler güvenli şekilde text node olarak eklenir.
+ * Dönüş: oluşturulan öğe. Henüz sayfaya eklenmez; çağıran appendChild ile ekler.
+ */
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -72,6 +103,11 @@ function el(tag, attrs = {}, children = []) {
   return node;
 }
 
+/**
+ * Ekranın sağ üstünde kısa süreli bildirim (toast) gösterir. 4 saniye sonra kendiliğinden kaybolur.
+ * Parametreler: message = gösterilecek metin; type = "info", "error" veya "success" (CSS sınıfı olarak kullanılır, renk belirler).
+ * Not: #toast-root öğesi index.html içinde olmalıdır; yoksa hata verir.
+ */
 function toast(message, type = "info") {
   const root = qs("#toast-root");
   const node = el("div", { class: `toast ${type}` }, message);
@@ -79,11 +115,21 @@ function toast(message, type = "info") {
   setTimeout(() => node.remove(), 4000);
 }
 
+/**
+ * ISO tarih metnini (örn. "2026-10-24T10:00:00Z") Türkçe yerel formatta gösterir.
+ * Tarih boşsa "-" döner. Geçersiz tarih gelirse hata fırlatmak yerine metni olduğu gibi döndürür.
+ */
 function fmtDate(iso) {
   if (!iso) return "-";
   try { return new Date(iso).toLocaleString("tr-TR"); } catch { return iso; }
 }
 
+/**
+ * Bir düğmeyi işlem sürerken meşgul gösterir (çift tıklamayı engeller).
+ * Akış: düğme kapatılır, metni "…" olur, fn çalışır (ve bittiğinde sonucu döner). Hata olsa bile finally bloğu düğmeyi eski haline getirir.
+ * Parametreler: btn = düğme öğesi; fn = async işlem.
+ * Dönüş: fn'in döndürdüğü değer. fn hata fırlatırsa aynen yukarı iletilir.
+ */
 async function withBusy(btn, fn) {
   const original = btn.textContent;
   btn.disabled = true;
@@ -96,6 +142,11 @@ async function withBusy(btn, fn) {
   }
 }
 
+/**
+ * API hatalarını tek yerden işler: konsola yazar ve kullanıcıya bildirim gösterir.
+ * HTTP 401 gelirse oturum süresi dolmuştur; kullanıcı çıkış yapılıp giriş ekranına döner.
+ * Parametreler: e = yakalanan hata; fallback = hata mesajı yoksa gösterilecek metin.
+ */
 function handleApiError(e, fallback = "Bir hata oluştu") {
   console.error(e);
   if (e.status === 401) {
@@ -110,8 +161,16 @@ function handleApiError(e, fallback = "Bir hata oluştu") {
  * Auth
  * ==========================================================*/
 
+/**
+ * Kullanıcının giriş yapıp yapmadığını söyler (token var mı). Token yalnız varlığına bakılarak kontrol edilir; süresi dolmuş olabilir, bu durum API'de 401 ile yakalanır.
+ */
 function isLoggedIn() { return !!state.token; }
 
+/**
+ * Giriş/kayıt sonrası dönen oturum bilgisini hem state'e hem localStorage'a yazar; sayfa yenilenince oturum korunsun diye.
+ * Parametreler: {access_token, role, user_id} sunucu cevabından gelen alanlar; username = giriş formundaki kullanıcı adı.
+ * Güvenlik notu: token localStorage'da tutulduğu için sayfada çalışan herhangi bir XSS açığı bu token'ı okuyabilir.
+ */
 function saveAuth({ access_token, role, user_id }, username) {
   state.token = access_token;
   state.role = role;
@@ -123,6 +182,9 @@ function saveAuth({ access_token, role, user_id }, username) {
   localStorage.setItem("sb_username", username);
 }
 
+/**
+ * Oturumu kapatır: state ve localStorage'daki tüm oturum bilgilerini siler, giriş ekranını gösterir.
+ */
 function logout() {
   state.token = null;
   state.role = null;
@@ -135,11 +197,17 @@ function logout() {
   showAuthScreen();
 }
 
+/**
+ * Giriş ekranını gösterir, ana uygulama iskeletini (app-shell) gizler. Display değerleri index.html/CSS ile uyumlu olmalıdır.
+ */
 function showAuthScreen() {
   qs("#auth-screen").style.display = "flex";
   qs("#app-shell").style.display = "none";
 }
 
+/**
+ * Giriş ekranını gizler, ana uygulama iskeletini gösterir, kullanıcı etiketini (ad ve rol) yazar ve mevcut ekranı yeniden çizer.
+ */
 function showAppShell() {
   qs("#auth-screen").style.display = "none";
   qs("#app-shell").style.display = "flex";
@@ -147,8 +215,13 @@ function showAppShell() {
   renderView(state.view);
 }
 
+// Giriş formunun modu: "login" (giriş) veya "register" (kayıt). Sekmeler ve form gönderimi bu değere bakar.
 let authMode = "login";
 
+/**
+ * Giriş/kayıt ekranının olaylarını (sekme tıklamaları, form gönderimi, çıkış düğmesi) bağlar. Uygulama açılışında bir kez çağrılır.
+ * Form gönderildiğinde authMode'a göre api.login ya da api.register çağrılır; başarılıysa oturum kaydedilip uygulama açılır, hatada mesaj kutusunda gösterilir.
+ */
 function initAuthScreen() {
   qs("#tab-login").addEventListener("click", () => {
     authMode = "login";
@@ -186,6 +259,11 @@ function initAuthScreen() {
   });
 
   qs("#logout-btn").addEventListener("click", logout);
+
+  // Faz 0.3: kayıt kapalıysa kayıt sekmesi gizlenir. Durum alınamazsa sekme görünür kalır; sunucu yine de kontrol eder.
+  api.registrationStatus()
+    .then((r) => { if (!r.open) qs("#tab-register").style.display = "none"; })
+    .catch(() => {});
 }
 
 /* ============================================================
@@ -200,6 +278,11 @@ const VIEW_RENDERERS = {
   drivers: renderDriversView,
 };
 
+/**
+ * Verilen görünümü (sayfayı) ekrana çizer.
+ * Önce önceki ekrandaki grafik ve önbellek temizlenir (bellek sızıntısı ve eski verinin görünmemesi için). Sonra state.view güncellenir, menü düğmesi işaretlenir ve VIEW_RENDERERS'tan ilgili fonksiyon çağrılır.
+ * Bilinmeyen bir ad gelirse içerik boş kalır.
+ */
 function renderView(name) {
   for (const chart of chartInstances.values()) chart.dispose();
   chartInstances.clear();
@@ -213,6 +296,9 @@ function renderView(name) {
   if (renderer) renderer(root);
 }
 
+/**
+ * Sol menüdeki her düğmeye tıklanınca renderView'i çağıran olayı bağlar. Düğmenin data-view özelliği hangi ekranın açılacağını belirler.
+ */
 function initNav() {
   qsa(".nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => renderView(btn.dataset.view));
@@ -223,12 +309,18 @@ function initNav() {
  * Tema (koyu / açık)
  * ==========================================================*/
 
+/**
+ * Seçilen temayı uygular: body'ye "light-theme" sınıfını ekler/kaldırır ve tema düğmesinin simgesini (güneş/ay) değiştirir. Tema renkleri CSS tarafında tanımlıdır.
+ */
 function applyTheme(theme) {
   document.body.classList.toggle("light-theme", theme === "light");
   const btn = qs("#theme-toggle-btn");
   if (btn) btn.textContent = theme === "light" ? "☀️" : "🌙";
 }
 
+/**
+ * Açılışta kayıtlı temayı uygular (kayıt yoksa koyu tema) ve tema düğmesine tıklanınca koyu/açık arasında geçişi yapar; tercih localStorage'a yazılır ki sonraki açılışta da hatırlansın.
+ */
 function initTheme() {
   const saved = localStorage.getItem("sb_theme") || "dark";
   applyTheme(saved);
@@ -244,60 +336,69 @@ function initTheme() {
  * 1) Bağlantılar (Connections)
  * ==========================================================*/
 
+/**
+ * 'Bağlantılar' ekranını kurar: yeni bağlantı formunu ve mevcut bağlantıların listesini çizer.
+ * Async çünkü bağlantı listesi sunucudan çekilir; hata olursa handleApiError ile bildirilir ve liste alanında 'yüklenemedi' yazar.
+ * Parametre: root = ekranın ekleneceği kapsayıcı öğe.
+ */
 async function renderConnectionsView(root) {
   root.appendChild(el("h2", {}, "Veritabanı Bağlantıları"));
 
   const formCard = el("div", { class: "card" });
-  formCard.appendChild(el("h3", {}, "Yeni Bağlantı Ekle"));
+  if (!SuperBIRole.shouldShowConnectionForm(state.role)) {
+    formCard.appendChild(el("p", { class: "muted" }, "Bağlantı ekleme yalnız yönetici içindir."));
+  } else {
+    formCard.appendChild(el("h3", {}, "Yeni Bağlantı Ekle"));
 
-  const dbTypeSel = el("select", { id: "conn-db-type" }, [
-    el("option", { value: "sqlite" }, "SQLite"),
-    el("option", { value: "postgresql" }, "PostgreSQL"),
-    el("option", { value: "mysql" }, "MySQL"),
-    el("option", { value: "mssql" }, "SQL Server"),
-    el("option", { value: "oracle" }, "Oracle"),
-  ]);
+    const dbTypeSel = el("select", { id: "conn-db-type" }, [
+      el("option", { value: "sqlite" }, "SQLite"),
+      el("option", { value: "postgresql" }, "PostgreSQL"),
+      el("option", { value: "mysql" }, "MySQL"),
+      el("option", { value: "mssql" }, "SQL Server"),
+      el("option", { value: "oracle" }, "Oracle"),
+    ]);
 
-  const hostInput = el("input", { id: "conn-host", placeholder: "localhost" });
-  const portInput = el("input", { id: "conn-port", placeholder: "5432", type: "number" });
-  const dbInput = el("input", { id: "conn-database", placeholder: "/path/to/file.db  ya da  veritabani_adi" });
-  const userInput = el("input", { id: "conn-user", placeholder: "kullanıcı adı (sqlite'ta boş bırakın)" });
-  const passInput = el("input", { id: "conn-password", type: "password", placeholder: "şifre (sqlite'ta boş bırakın)" });
+    const hostInput = el("input", { id: "conn-host", placeholder: "localhost" });
+    const portInput = el("input", { id: "conn-port", placeholder: "5432", type: "number" });
+    const dbInput = el("input", { id: "conn-database", placeholder: "/path/to/file.db  ya da  veritabani_adi" });
+    const userInput = el("input", { id: "conn-user", placeholder: "kullanıcı adı (sqlite'ta boş bırakın)" });
+    const passInput = el("input", { id: "conn-password", type: "password", placeholder: "şifre (sqlite'ta boş bırakın)" });
 
-  const grid = el("div", { class: "grid-3" }, [
-    el("div", {}, [el("label", {}, "Veritabanı Tipi"), dbTypeSel]),
-    el("div", {}, [el("label", {}, "Host"), hostInput]),
-    el("div", {}, [el("label", {}, "Port"), portInput]),
-    el("div", {}, [el("label", {}, "Veritabanı / Dosya Yolu"), dbInput]),
-    el("div", {}, [el("label", {}, "Kullanıcı"), userInput]),
-    el("div", {}, [el("label", {}, "Şifre"), passInput]),
-  ]);
-  formCard.appendChild(grid);
+    const grid = el("div", { class: "grid-3" }, [
+      el("div", {}, [el("label", {}, "Veritabanı Tipi"), dbTypeSel]),
+      el("div", {}, [el("label", {}, "Host"), hostInput]),
+      el("div", {}, [el("label", {}, "Port"), portInput]),
+      el("div", {}, [el("label", {}, "Veritabanı / Dosya Yolu"), dbInput]),
+      el("div", {}, [el("label", {}, "Kullanıcı"), userInput]),
+      el("div", {}, [el("label", {}, "Şifre"), passInput]),
+    ]);
+    formCard.appendChild(grid);
 
-  const createBtn = el("button", { class: "btn btn-primary" }, "Bağlantı Oluştur");
-  createBtn.style.marginTop = "12px";
-  formCard.appendChild(createBtn);
+    const createBtn = el("button", { class: "btn btn-primary" }, "Bağlantı Oluştur");
+    createBtn.style.marginTop = "12px";
+    formCard.appendChild(createBtn);
 
-  createBtn.addEventListener("click", () =>
-    withBusy(createBtn, async () => {
-      try {
-        const payload = {
-          db_type: dbTypeSel.value,
-          host: hostInput.value || "",
-          port: portInput.value ? parseInt(portInput.value, 10) : null,
-          database: dbInput.value,
-          user: userInput.value || null,
-          password: passInput.value || null,
-        };
-        if (!payload.database) { toast("Veritabanı / dosya yolu zorunlu", "error"); return; }
-        const res = await api.createConnection(payload);
-        toast(`Bağlantı oluşturuldu: ${res.conn_id}`, "success");
-        await refreshConnections();
-        renderView("connections");
-      } catch (e) { handleApiError(e, "Bağlantı oluşturulamadı"); }
-    })
-  );
+    createBtn.addEventListener("click", () =>
+      withBusy(createBtn, async () => {
+        try {
+          const payload = {
+            db_type: dbTypeSel.value,
+            host: hostInput.value || "",
+            port: portInput.value ? parseInt(portInput.value, 10) : null,
+            database: dbInput.value,
+            user: userInput.value || null,
+            password: passInput.value || null,
+          };
+          if (!payload.database) { toast("Veritabanı / dosya yolu zorunlu", "error"); return; }
+          const res = await api.createConnection(payload);
+          toast(`Bağlantı oluşturuldu: ${res.conn_id}`, "success");
+          await refreshConnections();
+          renderView("connections");
+        } catch (e) { handleApiError(e, "Bağlantı oluşturulamadı"); }
+      })
+    );
 
+  }
   root.appendChild(formCard);
 
   const listCard = el("div", { class: "card" });
@@ -316,10 +417,17 @@ async function renderConnectionsView(root) {
   }
 }
 
+/**
+ * Bağlantı listesini sunucudan yeniden çeker ve state.connections'a yazar, sonra listeyi yeniden çizer.
+ */
 async function refreshConnections() {
   state.connections = await api.listConnections();
 }
 
+/**
+ * state.connections listesini tablo olarak çizer: her satır için 'Test Et' (bağlantıyı dener), 'Analiz Et' (şemayı tarar), 'Sonuçlar' (son analizi gösterir) ve 'Sil' düğmeleri olur.
+ * Tablo boşsa 'Henüz bağlantı yok' mesajı gösterilir. Liste altında analiz sonuçları için boş bir panel (#analysis-results-panel) eklenir.
+ */
 function renderConnectionsList(container) {
   container.innerHTML = "";
   if (!state.connections.length) {
@@ -479,6 +587,8 @@ async function showAnalysisResults(connId) {
  * 2) Sorgu Oluşturucu (Query Builder)
  * ==========================================================*/
 
+// Sorgu oluşturucunun izin verdiği karşılaştırma operatörleri (WHERE koşulları için).
+// Neden liste: Kullanıcının yazdığı metin doğrudan SQL'e girmesin diye yalnız bu değerlere izin verilir. Yeni operatör eklerken sunucu tarafındaki listeyle de uyumlu olmalıdır.
 const ALLOWED_OPERATORS = [
   "=", "!=", "<>", ">", "<", ">=", "<=",
   "LIKE", "NOT LIKE", "ILIKE",
@@ -487,11 +597,16 @@ const ALLOWED_OPERATORS = [
   "BETWEEN",
 ];
 
+// Join tipleri için izin verilen liste. Yukarıdaki operatör listesi gibi, SQL'e yalnız bu sabit metinler yazılır.
 const ALLOWED_JOIN_TYPES = [
   "JOIN", "INNER JOIN", "LEFT JOIN", "LEFT OUTER JOIN",
   "RIGHT JOIN", "RIGHT OUTER JOIN", "FULL JOIN", "FULL OUTER JOIN",
 ];
 
+/**
+ * Sorgu oluşturucunun durumunu sıfırlar: seçili tablo, kolonlar, join/filtre/gruplama ve son önizleme/çalıştırma sonuçları silinir.
+ * Neden: Bağlantı veya tablo değişince eski tablonun alanları yeni tabloya karışmasın diye.
+ */
 function resetQueryBuilderState() {
   state.selectedTable = null;
   state.columns = [];
@@ -505,6 +620,11 @@ function resetQueryBuilderState() {
   state.lastRun = null;
 }
 
+/**
+ * 'Sorgu Oluşturucu' ekranını kurar: bağlantı, şema ve tablo seçimi üstte; seçilen tablonun sorgu kartı (alanlar, join, filtre) ve sonuç kartı altta gelir.
+ * Bağlantı yoksa uyarı gösterilip çıkılır. Seçim değişince önceki sorgu durumu sıfırlanır ve ilgili listeler sunucudan yeniden çekilir.
+ * Parametre: root = ekranın ekleneceği kapsayıcı.
+ */
 async function renderQueryView(root) {
   root.appendChild(el("h2", {}, "Sorgu Oluşturucu"));
 
@@ -543,6 +663,10 @@ async function renderQueryView(root) {
   resultCard.style.display = "none";
   root.appendChild(resultCard);
 
+  /**
+   * Verilen bağlantının şema (schema) listesini açılır kutuya doldurur. Şema desteklemeyen veritabanlarında (örn. SQLite) hata sessizce yutulur ve kutuda sadece '(varsayılan)' kalır.
+   * Parametre: connId = bağlantı kimliği.
+   */
   async function loadSchemasFor(connId) {
     schemaSel.innerHTML = "";
     schemaSel.appendChild(el("option", { value: "" }, "(varsayılan)"));
@@ -557,6 +681,10 @@ async function renderQueryView(root) {
     }
   }
 
+  /**
+   * Seçili şemadaki tabloları tablo kutusuna doldurur. Seçili tablo hâlâ listedeyse onu otomatik seçer ve kolonlarını yükler.
+   * Parametreler: connId = bağlantı kimliği; schema = şema adı (boş olabilir).
+   */
   async function loadTablesFor(connId, schema) {
     state.selectedConnId = connId;
     state.selectedSchema = schema || null;
@@ -579,6 +707,11 @@ async function renderQueryView(root) {
     }
   }
 
+  /**
+   * Seçilen tablonun kolonlarını yükler ve sorgu kartını gösterir.
+   * Önemli: Tablo değişince önceki alan, join, filtre ve gruplama seçimleri bilerek silinir (eski tablonun alanları yeni tabloda geçersizdir).
+   * Varsayılan olarak her kolon 'dim' (boyut) alanı olarak işaretlenir; sonra kullanıcı kolonları dahil/hariç yapar.
+   */
   async function loadColumnsFor(connId, table, schema) {
     state.selectedTable = table;
     state.fields = {};
@@ -619,6 +752,11 @@ async function renderQueryView(root) {
   await loadTablesFor(connSel.value, schemaSel.value);
 }
 
+/**
+ * Sorgu oluşturucudaki seçimleri sunucuya gönderilecek tek bir nesneye çevirir (buildQueryShape).
+ * Alanlar: bağlantı, tablo, şema, alanlar (fields), join, filtre, gruplama, sıralama ve hesaplanmış alanlar.
+ * Önizleme, çalıştırma, geçmişe kayıt ve veri seti kaydı hepsi bu şekli kullanır, böylece aynı sorgu her yerde aynı görünür.
+ */
 function buildQueryShape() {
   return {
     conn_id: state.selectedConnId,
@@ -633,6 +771,11 @@ function buildQueryShape() {
   };
 }
 
+/**
+ * Sorgu kartının içeriğini (alan çipleri, join, filtre, hesaplanmış alan, gruplama/sıralama, örnek boyutu ve düğmeler) baştan çizer.
+ * Parametreler: builderCard = çizilecek kart; resultCard = sonuçların yazılacağı kart (önizleme/çalıştırma bunu kullanır).
+ * Her değişiklikte yalnız bu kart silinip yeniden kurulur; state güncellemesi çağıranın sorumluluğundadır.
+ */
 function renderBuilderCard(builderCard, resultCard) {
   builderCard.innerHTML = "";
   builderCard.appendChild(el("h3", {}, `Tablo: ${state.selectedTable}`));
@@ -726,6 +869,10 @@ function renderBuilderCard(builderCard, resultCard) {
   ]));
 }
 
+/**
+ * Bir tablonun kolonlarını önbellekten (state._joinColumnsCache) ya da sunucudan alır. Aynı tablo için tekrar istek atılmaz.
+ * Hata olursa kullanıcıya bildirilir ve boş dizi döner (join kutusu boş kalır).
+ */
 async function getColumnsForTable(connId, table) {
   state._joinColumnsCache = state._joinColumnsCache || {};
   const key = `${connId}::${table}`;
@@ -740,10 +887,16 @@ async function getColumnsForTable(connId, table) {
   }
 }
 
+// Seçili tablonun 'Önerilen İlişkiler' listesini getirir. Veriler analiz sonucundan gelir; bu yüzden önce Bağlantılar ekranında 'Analiz Et' çalıştırılmış olmalıdır. Analiz tüm şemalardan birikmiş veriyi döndürdüğü için burada şema filtresi uygulanmaz.
 // Seçili tabloyla ilgili, daha önce analiz edilmiş (herhangi bir şemadaki)
 // ilişkileri getirir ve tek tıkla join olarak eklemeyi sağlar. DB-geneli
 // çalışır — getAnalysisResults() tüm şemalardan biriken veriyi döner,
 // burada şema filtrelemesi YAPILMAZ.
+/**
+ * Seçili tablo ile ilgili kayıtlı ilişkileri öneri olarak listeler; tek tıkla join eklenmesini sağlar.
+ * Akış: analiz sonuçlarını çek, seçili tabloyu içeren ilişkileri bul, zaten eklenmiş olanları çıkar, her öneri için bir düğme çiz.
+ * Parametre: container = önerilerin yazılacağı kutu. Her ekleme sonrası kendini yeniden çizer.
+ */
 async function loadRelationshipSuggestions(container) {
   container.innerHTML = "";
   container.appendChild(el("p", { class: "muted small" }, "Yükleniyor…"));
@@ -813,6 +966,10 @@ async function loadRelationshipSuggestions(container) {
   container.appendChild(list);
 }
 
+/**
+ * Join satırlarını kutuya çizer. Her join için: join tipi, sol tablo/kolon, sağ tablo/kolon seçim kutuları ve Sil düğmesi bulunur.
+ * Kolon listeleri tablo seçilince getirilir (getColumnsForTable). Parametre box = join kutusu öğesi.
+ */
 function renderJoinsBox(box) {
   box.innerHTML = "";
   state.joins.forEach((j, idx) => {
@@ -820,6 +977,7 @@ function renderJoinsBox(box) {
       (t) => el("option", { value: t, selected: t === j.type ? "selected" : null }, t)
     ));
 
+    // Tablo seçim kutusunun seçenekleri: başta boş bir 'tablo seçin' satırı, sonra bağlantıdaki tüm tablolar. Seçili olan tablo 'selected' ile işaretlenir.
     const tableOptions = (selected) => [el("option", { value: "" }, "tablo seçin")].concat(
       state.tables.map((t) => el("option", { value: t, selected: t === selected ? "selected" : null }, t))
     );
@@ -830,6 +988,10 @@ function renderJoinsBox(box) {
     const f2Sel = el("select", {}, [el("option", { value: j.f2 || "" }, j.f2 || "kolon seçin")]);
     const delBtn = el("button", { class: "btn btn-sm btn-danger" }, "Sil");
 
+    /**
+     * Bir tablo kutusu değişince kolon kutusunu o tablonun kolonlarıyla doldurur. Tablo boşsa 'önce tablo seçin' yazar.
+     * Parametreler: tableSel = tablo kutusu; colSel = kolon kutusu; currentVal = önceden seçili kolon (varsa tekrar seçili gelsin diye).
+     */
     async function refreshColumnSelect(tableSel, colSel, currentVal) {
       const table = tableSel.value;
       colSel.innerHTML = "";
@@ -860,6 +1022,10 @@ function renderJoinsBox(box) {
   });
 }
 
+/**
+ * Filtre satırlarını kutuya çizer: kolon adı, operatör, değer ve (BETWEEN için) ikinci değer alanları ile Sil düğmesi.
+ * IN / NOT IN için değer virgülle ayrılmış bir listeye çevrilir. Parametre box = filtre kutusu.
+ */
 function renderFiltersBox(box) {
   box.innerHTML = "";
   state.filters.forEach((f, idx) => {
@@ -871,6 +1037,9 @@ function renderFiltersBox(box) {
     const val2Input = el("input", { value: f.value2 ?? "", placeholder: "değer 2 (BETWEEN)" });
     const delBtn = el("button", { class: "btn btn-sm btn-danger" }, "Sil");
 
+    /**
+     * Operatöre göre değer kutularını gösterir/gizler: IS NULL ve IS NOT NULL'da değer gerekmez; BETWEEN'de ikinci değer kutusu açılır.
+     */
     function syncVisibility() {
       const noValue = f.operator === "IS NULL" || f.operator === "IS NOT NULL";
       valInput.style.display = noValue ? "none" : "block";
@@ -895,6 +1064,10 @@ function renderFiltersBox(box) {
   }
 }
 
+/**
+ * Hesaplanmış alan (formül) satırlarını kutuya çizer: alan adı, formül metni ve Sil düğmesi.
+ * Formül alanı altında desteklenen ifadeler hakkında kısa uyarı gösterilir. Alt sorgu gibi desteklenmeyen ifadeler sunucuda reddedilir.
+ */
 function renderCalcFieldsBox(box) {
   box.innerHTML = "";
   state.calculatedFields.forEach((cf, idx) => {
@@ -920,6 +1093,10 @@ function renderCalcFieldsBox(box) {
   }
 }
 
+/**
+ * 'SQL Önizle' düğmesi: sorguyu çalıştırmadan, sunucunun üreteceği SQL metnini ister ve sonuç kartında gösterir. Hata olursa mesaj gösterilir.
+ * Parametre resultCard = sonucun yazılacağı kart.
+ */
 async function doPreview(resultCard) {
   try {
     const conn = state.connections.find((c) => c.conn_id === state.selectedConnId);
@@ -930,6 +1107,10 @@ async function doPreview(resultCard) {
   } catch (e) { handleApiError(e, "SQL önizleme başarısız — filtre/join alanlarını kontrol edin"); }
 }
 
+/**
+ * 'Sorguyu Çalıştır' düğmesi: sorguyu sunucuda çalıştırır (örnek boyut kadar satır, commit: false ile henüz kalıcı değil) ve sonucu gösterir. Başarılıysa satır sayısı ve süre bildirimi çıkar.
+ * Parametre resultCard = sonucun yazılacağı kart.
+ */
 async function doRun(resultCard) {
   try {
     const body = { ...buildQueryShape(), sample: state.sample, commit: false, mode: "memory" };
@@ -940,6 +1121,11 @@ async function doRun(resultCard) {
   } catch (e) { handleApiError(e, "Sorgu çalıştırılamadı"); }
 }
 
+/**
+ * 'Sorguyu Çalıştır' sonucunu gösterir: önizleme SQL'i (varsa), çalıştırma rozetleri (satır sayısı, süre, önbellek durumu), onay düğmesi, geçmişe ve veri setine kaydet düğmeleri ve tablo.
+ * Commit: sonuç önce geçici (30 sn) olarak durur; 'Bu sonucu onayla' ile 5 dakikalık önbelleğe alınır.
+ * Not: Sonuç hücreleri text node olarak eklenir (HTML yorumlanmaz).
+ */
 function renderResultCard(resultCard) {
   resultCard.style.display = "block";
   resultCard.innerHTML = "";
@@ -1003,7 +1189,7 @@ function renderResultCard(resultCard) {
           group_by: shape.group_by, order_by: shape.order_by,
         };
 
-        const existing = await api.listDatasets();
+        const existing = SuperBIRole.writableDatasets(await api.listDatasets(), state.role, state.userId);
         const match = existing.find((d) => d.name.trim().toLowerCase() === name.trim().toLowerCase());
 
         if (match) {
@@ -1028,6 +1214,11 @@ function renderResultCard(resultCard) {
   }
 }
 
+/**
+ * Sorgunun 'parmak izini' (fingerprint) üretir: base_table + join + group_by içeriğinin SHA-256 özeti, ilk 24 hex karakter.
+ * Neden: Aynı yapıdaki sorgular geçmişte tek grupta toplansın diye. Bu bir güvenlik özeti değildir, yalnız gruplama anahtarıdır.
+ * Tarayıcının crypto.subtle API'si kullanılır (asenkron).
+ */
 async function computeFingerprint(shape) {
   const payload = JSON.stringify({
     base_table: shape.base_table,
@@ -1043,6 +1234,10 @@ async function computeFingerprint(shape) {
  * 3) Geçmiş (History)
  * ==========================================================*/
 
+/**
+ * 'Sorgu Geçmişi' ekranını kurar: son çalıştırılanlar ve fingerprint'e göre gruplanmış sürümler iki ayrı kartta gösterilir. Her biri ayrı try/catch ile yüklenir; biri hata verse diğeri yine çalışır.
+ * Parametre: root = ekranın ekleneceği kapsayıcı.
+ */
 async function renderHistoryView(root) {
   root.appendChild(el("h2", {}, "Sorgu Geçmişi"));
 
@@ -1077,6 +1272,10 @@ async function renderHistoryView(root) {
   }
 }
 
+/**
+ * state.historyRecent (son çalıştırmalar) listesini tabloya çevirir. Tarih için fmtDate kullanılır; eksik alanlar '-' ile gösterilir.
+ * Parametre container = tablonun yazılacağı kutu.
+ */
 function renderRecentTable(container) {
   container.innerHTML = "";
   if (!state.historyRecent.length) {
@@ -1100,6 +1299,10 @@ function renderRecentTable(container) {
   container.appendChild(table);
 }
 
+/**
+ * state.historyGroups listesini tabloya çevirir; her satırda 'Grubu Sil' düğmesi vardır. Silme onaydan sonra yapılır ve liste sunucudan yeniden çekilir.
+ * Parametre container = tablonun yazılacağı kutu.
+ */
 function renderGroupsTable(container) {
   container.innerHTML = "";
   if (!state.historyGroups.length) {
@@ -1137,8 +1340,10 @@ function renderGroupsTable(container) {
  * 4) Dashboard'lar — Undo/Redo dahil
  * ==========================================================*/
 
+// Dashboard tuvalinde 1 mm'nin kaç piksel olduğu (ekranda ölçek). mmToPx/pxToMm bu sabit ve yakınlık (zoom) ile çalışır. Tüm yerleşim değerleri (x, y, w, h) milimetre cinsinden saklanır, ekranda piksele çevrilir.
 const PX_PER_MM = 3;
 
+// Palete eklenebilecek widget türleri. w/h: yeni eklenen widget'ın varsayılan boyutu (mm). 'type' değeri CHART_TYPES ve renderWidgetChart kararlarında kullanılır.
 const WIDGET_TYPES = [
   { type: "kpi",     label: "KPI Kartı",        w: 60,  h: 40 },
   { type: "line",    label: "Çizgi Grafik",      w: 100, h: 70 },
@@ -1154,9 +1359,18 @@ const WIDGET_TYPES = [
   { type: "text",    label: "Metin Kutusu",        w: 80,  h: 30 },
 ];
 
+/**
+ * Milimetreyi ekrandaki piksele çevirir (yakınlık dahil). Parametre mm: milimetre. Dönüş: piksel sayısı (metin olarak style'a yazılır).
+ */
 function mmToPx(mm) { return mm * PX_PER_MM * state.dashZoom; }
+/**
+ * Ekrandaki pikseli milimetreye çevirir; mmToPx'in tersidir. Sürükleme ve boyutlandırmada fare hareketi mm'ye çevrilirken kullanılır.
+ */
 function pxToMm(px) { return px / (PX_PER_MM * state.dashZoom); }
 
+/**
+ * Boş yeni bir dashboard nesnesi döner. Varsayılan sayfa yatay A4 (297 x 210 mm), henüz kaydedilmemiş olduğu için dashboard_id null'dır.
+ */
 function blankDashboard() {
   return { dashboard_id: null, name: "Yeni Dashboard", scale: "a4l", page_w_mm: 297, page_h_mm: 210, objects: [] };
 }
@@ -1164,6 +1378,7 @@ function blankDashboard() {
 /* ---- Dashboard Yerleşim Şablonları ---- */
 // Koordinatlar referans 297x210mm (a4l) üzerinden tasarlandı; applyDashboardTemplate
 // farklı page_w_mm/page_h_mm için oranlı ölçekler. Saf frontend — backend/API değişmedi.
+// Hazır yerleşim şablonları. Koordinatlar 297 x 210 mm referansa göre yazılmıştır; applyDashboardTemplate diğer sayfa boyutlarına oranlı ölçekler. Şablon eklemek için buraya yeni bir giriş eklemek yeterlidir.
 const DASHBOARD_TEMPLATES = {
   classic: {
     label: "Klasik",
@@ -1297,18 +1512,27 @@ function pushHistory() {
   updateUndoRedoButtons();
 }
 
+/**
+ * Bir adım geri alır (Ctrl+Z). Geçmişte önceki bir görüntü varsa imleci bir geri alır ve onu uygular. En eski kayıtta hiçbir şey yapmaz.
+ */
 function undoDashboard() {
   if (state.dashHistoryIndex <= 0) return;
   state.dashHistoryIndex--;
   _applyHistorySnapshot();
 }
 
+/**
+ * Bir adım ileri alır (Ctrl+Y). Geri alınmış bir adım varsa onu yeniden uygular. En son kayıtta hiçbir şey yapmaz.
+ */
 function redoDashboard() {
   if (state.dashHistoryIndex >= state.dashHistory.length - 1) return;
   state.dashHistoryIndex++;
   _applyHistorySnapshot();
 }
 
+/**
+ * dashHistoryIndex'teki anlık görüntüyü (JSON metni) geri yükler: dash.objects bu kopyadan yeniden üretilir ve tuval yeniden çizilir. Parse ettiği için her seferinde bağımsız bir kopya olur; geçmişteki kayıt değişmez.
+ */
 function _applyHistorySnapshot() {
   const dash = state.currentDashboard;
   if (!dash) return;
@@ -1320,6 +1544,9 @@ function _applyHistorySnapshot() {
   updateUndoRedoButtons();
 }
 
+/**
+ * Geri Al / İleri Al düğmelerini geçmiş durumuna göre açar veya kapatır. Düğmeler yoksa (editör açık değilse) hiçbir şey yapmaz.
+ */
 function updateUndoRedoButtons() {
   const undoBtn = qs("#dash-undo-btn");
   const redoBtn = qs("#dash-redo-btn");
@@ -1329,6 +1556,10 @@ function updateUndoRedoButtons() {
 
 /* ---- Dashboard listesi ve editör ---- */
 
+/**
+ * 'Dashboard'lar' ekranını kurar. Üstte yeni dashboard düğmesi; şablon seçici açıksa şablon kartları, değilse kayıtlı dashboard listesi gösterilir. Açık bir dashboard varsa altına editör çizilir.
+ * Parametre: root = ekranın ekleneceği kapsayıcı.
+ */
 async function renderDashboardsView(root) {
   root.appendChild(el("h2", {}, "Dashboard'lar"));
 
@@ -1378,6 +1609,10 @@ async function renderDashboardsView(root) {
   }
 }
 
+/**
+ * Kayıtlı dashboard'ların tablosunu çizer. Her satırda 'Aç' (sunucudan çekip editörde açar) ve 'Sil' (onaydan sonra siler) düğmeleri vardır.
+ * Parametre container = tablonun yazılacağı kutu.
+ */
 function renderDashList(container) {
   container.innerHTML = "";
   if (!state.dashboards.length) {
@@ -1418,6 +1653,12 @@ function renderDashList(container) {
   container.appendChild(table);
 }
 
+/**
+ * Dashboard düzenleyicisini çizer: araç çubuğu (ad, zoom, undo/redo, şablon, kaydet, kapat), sol widget paleti, orta tuval (sayfa) ve sağ özellik paneli.
+ * Kaydetme: dashboard_id yoksa yeni oluşturulur (POST), varsa güncellenir (PUT). Her ekleme/silme/taşıma pushHistory ile geçmişe yazılır.
+ * Klavye: Ctrl+Z / Ctrl+Y, yalnız bir metin kutusu odakta değilken çalışır.
+ * Parametre root = editörün ekleneceği kapsayıcı.
+ */
 function renderDashboardEditor(root) {
   const dash = state.currentDashboard;
   const card = el("div", { class: "card" });
@@ -1529,16 +1770,20 @@ function renderDashboardEditor(root) {
   root.appendChild(card);
 
   // Klavye kısayolları — sadece dashboard editörü açıkken aktif
+  // Tek referans (window.__dashKeyHandler): her çizimde öncekini kaldırıp yenisini ekleriz; Ctrl+Z birikip çoklu geri almaya yol açmaz.
   function onKeyDown(e) {
     // Input/textarea odakta ise kısayolları devreye alma
+    if (!qs("#dash-canvas-page")) return; // editör ekranda değilse (başka görünüme geçildi) kısayol çalışmasın
     const tag = document.activeElement?.tagName?.toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
     if (e.ctrlKey && e.key === "z") { e.preventDefault(); undoDashboard(); }
     if (e.ctrlKey && e.key === "y") { e.preventDefault(); redoDashboard(); }
   }
+  // Önceki editör çiziminden kalan dinleyiciyi kaldır (Ctrl+Z birikip çoklu geri almayı önler)
+  if (window.__dashKeyHandler) document.removeEventListener("keydown", window.__dashKeyHandler);
+  window.__dashKeyHandler = onKeyDown;
   document.addEventListener("keydown", onKeyDown);
   // Editör kapandığında dinleyiciyi temizle
-  const origClose = closeBtn.onclick;
   closeBtn.addEventListener("click", () => document.removeEventListener("keydown", onKeyDown), { once: true });
 
   // İlk geçmiş snapshot'ı al (editör açıldığında başlangıç durumu)
@@ -1550,30 +1795,51 @@ function renderDashboardEditor(root) {
 
 /* ---- Widget config helpers ---- */
 
+/**
+ * Widget'ın veri ayarlarını (query_id alanında JSON metni olarak saklanır) nesneye çevirir. Ayar yoksa veya bozuksa null döner.
+ */
 function getWidgetConfig(obj) {
   if (!obj.query_id) return null;
   try { return JSON.parse(obj.query_id); } catch { return null; }
 }
+/**
+ * Widget'ın veri ayarlarını JSON metni olarak query_id alanına yazar (getWidgetConfig'in tersi).
+ * Ayar alanı bu sürümde query_id içinde saklanır; kaydetme sırasında bu alan olduğu gibi gönderilir.
+ */
 function setWidgetConfig(obj, config) {
   obj.query_id = JSON.stringify(config);
 }
 
+// Grafik olarak çizilebilen widget türleri (tablo ve metin bunun dışında, ayrı çizilir).
 const CHART_TYPES = new Set(["line", "area", "column", "bar", "scatter", "pie", "donut", "kpi", "map"]);
+// Birden fazla seri (değer kolonu) destekleyen türler. Bunlarda 'valueCols' dizisi kullanılır; pie, donut, kpi ve map tek seri çizer.
 const MULTI_SERIES_TYPES = new Set(["line", "area", "column", "bar", "scatter"]);
 
+// Açık ECharts grafik nesneleri (widget id'ye göre). Yeniden çizimde ve kaldırmada bunlar dispose edilmezse bellek sızar.
 const chartInstances = new Map();
+// Tablo ve CSV dışa aktarma için son çekilen veriler (widget id'ye göre). exportWidget bu önbellekten okur.
 const widgetDataCache = new Map();
 
+// Dünya haritası verisinin tek seferde yüklenmesi için saklanan söz (Promise). Aynı anda birden çok harita olsa bile indirme bir kez yapılır.
 let worldMapPromise = null;
+/**
+ * Dünya haritası (world.json) verisini harici CDN'den bir kez indirir ve ECharts'a 'world' adıyla kaydeder. Sonraki çağrılar aynı Promise'i döner.
+ * DİKKAT: Bu, tarayıcının dış CDN'ye (cdn.jsdelivr.net) erişmesini gerektirir; bağlantı yoksa harita çizilmez (hata mesajı gösterilir). Bütünlük (SRI) kontrolü yoktur.
+ */
 function ensureWorldMapRegistered() {
   if (!worldMapPromise) {
-    worldMapPromise = fetch("https://cdn.jsdelivr.net/npm/echarts@5.5.1/map/json/world.json")
+    // Sabit sürüm + SRI (sha384). echarts@5.5.1 paketinde map/ klasörü yok (404), bu yüzden 4.9.0 sürümündeki aynı dosya kullanılır.
+    worldMapPromise = fetch("https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/json/world.json", { integrity: "sha384-nUdcDs8/D1tUu4Ixp0lpEEGjeGxyoTHy6NW9H0A9J6JBHm1Zg19hIZxESS6jgLF7" })
       .then((r) => { if (!r.ok) throw new Error("world.json indirilemedi"); return r.json(); })
       .then((geoJson) => { window.echarts.registerMap("world", geoJson); return true; });
   }
   return worldMapPromise;
 }
 
+/**
+ * Widget ayarından sorgunun 'temel' bilgilerini çıkarır. Eğer veri seti (datasetId) bağlıysa veri setinin tanımını sunucudan çeker; değilse doğrudan bağlantı ve tablo bilgisini kullanır.
+ * Dönüş: conn_id, base_table, joins, filters, group_by, order_by alanlarını içeren nesne.
+ */
 async function resolveQueryBase(config) {
   if (config.datasetId) {
     const ds = await api.getDataset(config.datasetId);
@@ -1586,29 +1852,45 @@ async function resolveQueryBase(config) {
   return { conn_id: config.conn_id, base_table: config.table, joins: [], filters: [], group_by: [], order_by: [] };
 }
 
+/**
+ * Veri setinin kolon adlarını bulur. Veri seti tanımını alıp 1 satırlık örnek sorgu çalıştırır; yalnız 'columns' listesi kullanılır.
+ * Neden 1 satır: Kolon adları için tüm veriyi çekmeye gerek yoktur.
+ */
 async function fetchDatasetColumns(datasetId) {
-  const ds = await api.getDataset(datasetId);
-  const res = await api.runQuery({
-    conn_id: ds.conn_id, base_table: ds.base_table,
-    fields: ds.fields || {}, joins: ds.joins || [], filters: ds.filters || [],
-    group_by: ds.group_by || [], order_by: ds.order_by || [],
-    sample: 1, commit: false, mode: "memory",
-  });
+  const res = await api.runDataset(datasetId, { sample: 1, mode: "memory" });
   return res.columns;
 }
 
-async function fetchWidgetData(config) {
+/**
+ * Widget veri çekme yolu. Veri seti bağlıysa sunucunun /run uç noktası kullanılır: bağlantı veri setinin
+ * sahibi kimliğiyle açılır, alıcının bağlantı erişimi gerekmez. Değilse doğrudan sorgu çalışır.
+ * fields: widget'ın istediği kolonlar (veri setinde tanımlı olmalı).
+ */
+async function runWidgetQuery(config, fields, sample) {
+  if (config.datasetId) {
+    return api.runDataset(config.datasetId, { fields, sample, mode: "memory" });
+  }
   const base = await resolveQueryBase(config);
+  return api.runQuery({ ...base, fields, sample, commit: false, mode: "memory" });
+}
+
+/**
+ * Tek seriye ait veriyi (etiket ve değer kolonu) sunucudan çeker ve grafik için hazırlar. Eğer agg (toplama) seçiliyse aynı etiketli satırları toplar (sum, avg, count, min, max).
+ * DİKKAT: Sunucu en fazla 500 satır döndürür (sample: 500). Toplamlar bu örnek üzerinden hesaplanır, tüm tablo üzerinden değildir.
+ * Dönüş: { labels, values, rawRows, rawCols }.
+ */
+async function fetchWidgetData(config) {
   const fields = {};
   fields[config.labelCol] = "dim";
   fields[config.valueCol] = "dim";
-  const body = { ...base, fields, sample: 500, commit: false, mode: "memory" };
-  const res = await api.runQuery(body);
+  const res = await runWidgetQuery(config, fields, 500);
   const labelIdx = res.columns.indexOf(config.labelCol);
   const valueIdx = res.columns.indexOf(config.valueCol);
+  // Etiketler metne, değerler sayıya çevrilir. Sayıya çevrilemeyen değerler (metin, boş) 0 olur; bu yüzden değer kolonu beklenen sayısal tipte olmalıdır.
   let labels = res.rows.map((r) => String(r[labelIdx]));
   let values = res.rows.map((r) => Number(r[valueIdx]) || 0);
 
+  // Toplama adımı: önce aynı etiketteki değerler gruplanır (Map), sonra her grup için seçilen fonksiyon uygulanır. agg 'none' ise gruplama yapılmaz ve satırlar olduğu gibi kullanılır.
   if (config.agg && config.agg !== "none") {
     const grouped = new Map();
     labels.forEach((l, i) => {
@@ -1630,20 +1912,26 @@ async function fetchWidgetData(config) {
   return { labels, values, rawRows: res.rows, rawCols: res.columns };
 }
 
+/**
+ * Çok serili widget için değer kolonlarının listesini döndürür. Önce valueCols (birden çok), yoksa tek valueCol kullanılır; ikisi de yoksa boş dizi döner.
+ */
 function getValueCols(config) {
   if (config.valueCols && config.valueCols.length) return config.valueCols;
   if (config.valueCol) return [config.valueCol];
   return [];
 }
 
+/**
+ * Çok seriye sahip grafik (çizgi, alan, sütun, bar, dağılım) verisini çeker. Her değer kolonu ayrı bir seri olur; agg seçiliyse her seri, etiket başına toplanır.
+ * Dönüş: { labels, seriesValues (her seri için bir dizi), seriesNames, rawRows, rawCols }.
+ * DİKKAT: Burada da sunucu en fazla 500 satır döner.
+ */
 async function fetchMultiSeriesData(config) {
-  const base = await resolveQueryBase(config);
   const valueCols = getValueCols(config);
   const fields = {};
   fields[config.labelCol] = "dim";
   for (const vc of valueCols) fields[vc] = "dim";
-  const body = { ...base, fields, sample: 500, commit: false, mode: "memory" };
-  const res = await api.runQuery(body);
+  const res = await runWidgetQuery(config, fields, 500);
 
   const labelIdx = res.columns.indexOf(config.labelCol);
   const valueIdxs = valueCols.map((vc) => res.columns.indexOf(vc));
@@ -1652,6 +1940,7 @@ async function fetchMultiSeriesData(config) {
 
   if (config.agg && config.agg !== "none") {
     const uniqueLabels = Array.from(new Set(labels));
+    // Bir etiketin tüm değerlerini seçilen toplama fonksiyonuyla birleştiren yardımcı. Aynı kurallar fetchWidgetData içindeki toplamayla aynıdır.
     const aggregate = (vals) => {
       if (config.agg === "sum") return vals.reduce((a, b) => a + b, 0);
       if (config.agg === "avg") return vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -1673,26 +1962,41 @@ async function fetchMultiSeriesData(config) {
   return { labels, seriesValues, seriesNames: valueCols, rawRows: res.rows, rawCols: res.columns };
 }
 
+/**
+ * Tablo ve matris widget'ları için ham satırları çeker (en fazla 200 satır). Dönüş: { rawRows, rawCols }. Toplama yapılmaz; kolon listesi config.columns ile belirlenir.
+ */
 async function fetchTableData(config) {
-  const base = await resolveQueryBase(config);
   const columns = config.columns && config.columns.length ? config.columns : null;
   const fields = {};
   if (columns) {
     for (const c of columns) fields[c] = "dim";
   }
-  const body = { ...base, fields, sample: 200, commit: false, mode: "memory" };
-  const res = await api.runQuery(body);
+  const res = await runWidgetQuery(config, fields, 200);
   return { rawRows: res.rows, rawCols: res.columns };
 }
 
+/**
+ * Bir widget'a ait ECharts grafiğini varsa kapatır (dispose) ve kayıt listesinden siler. Bellek sızıntısını önlemek için her widget yeniden çizilmeden ve silinmeden önce çağrılır.
+ */
 function disposeWidgetChart(widgetId) {
   const existing = chartInstances.get(widgetId);
   if (existing) { existing.dispose(); chartInstances.delete(widgetId); }
 }
 
+/**
+ * Bir widget'ı gövde kutusuna (bodyEl) çizer. Türüne göre farklı yollar izler:
+ * - text: düzenlenebilir metin kutusu (sunucu sorgusu yok).
+ * - veri bağlı değilse 'bağlayın' uyarısı.
+ * - table/matrix: ham veri tablosu (ilk 30 satır).
+ * - kpi: tek bir toplam değer (sayı).
+ * - grafikler: ECharts ile çizim (ECharts yüklenemezse uyarı).
+ * Veri hatası olursa kutuya hata mesajı yazılır; widget sayfayı bozmaz.
+ * Parametreler: obj = widget nesnesi; bodyEl = çizim kutusu öğesi.
+ */
 async function renderWidgetChart(obj, bodyEl) {
   const config = getWidgetConfig(obj);
 
+  // Metin widget'ı sorgu yapmaz: içeriği ve stilini (punto, renk, hizalama, kalınlık) doğrudan ayardan okur. İçerik text node olarak eklenir (HTML yorumlanmaz).
   if (obj.type === "text") {
     disposeWidgetChart(obj.id);
     bodyEl.innerHTML = "";
@@ -1741,6 +2045,7 @@ async function renderWidgetChart(obj, bodyEl) {
   }
 
   try {
+    // KPI: tüm değerlerin toplamı büyük bir sayı olarak gösterilir (agg 'count' ise etiket sayısı). Yazı boyutu widget yüksekliğine göre büyür (en fazla 28 px).
     if (obj.type === "kpi") {
       const data = await fetchWidgetData(config);
       disposeWidgetChart(obj.id);
@@ -1754,6 +2059,7 @@ async function renderWidgetChart(obj, bodyEl) {
       return;
     }
 
+    // Çok seri destekleyen türlerde (line/area/column/bar/scatter) çoklu veri çekilir; diğer türler tek seri olarak çekilir.
     const isMultiSeries = MULTI_SERIES_TYPES.has(obj.type);
     const data = isMultiSeries ? await fetchMultiSeriesData(config) : await fetchWidgetData(config);
 
@@ -1778,6 +2084,7 @@ async function renderWidgetChart(obj, bodyEl) {
         return;
       }
 
+      // Harita için önce dünya haritası verisinin yüklenmesi beklenir. Yüklenemezse grafik çizilmez, hata mesajı gösterilir.
       if (obj.type === "map") {
         try { await ensureWorldMapRegistered(); }
         catch (e) {
@@ -1796,14 +2103,17 @@ async function renderWidgetChart(obj, bodyEl) {
       bodyEl.appendChild(chartDiv);
 
       if (chart) chart.dispose();
+      // ECharts örneği 'dark' temasıyla ve canvas renderer ile açılır (SVG yerine canvas: çok veri için daha hızlı). Grafik kutusunun içine tam boyutlu bir div yerleştirilir.
       chart = window.echarts.init(chartDiv, "dark", { renderer: "canvas" });
       chartInstances.set(obj.id, chart);
 
+      // Seri renkleri bu sabit paletten sırayla alınır. Widget'ın kendi rengi (obj.color) bu grafiklerde seri renginde kullanılmaz; yalnız haritanın renk skalasında kullanılır.
       const palette = ["#378ADD", "#58c9a0", "#e5b93d", "#e5484d", "#9b6bd1", "#38b6d9"];
       const baseColor = obj.color || "#378ADD";
       const hasMultipleSeries = isMultiSeries && data.seriesValues.length > 1;
 
       let option;
+      // Çizgi, alan ve sütun grafikleri aynı eksen yapısını kullanır. 'column' ECharts'ta 'bar' seri tipine, çizgi ve alan 'line' tipine çevrilir (alan için opaklık ayarlanır).
       if (obj.type === "line" || obj.type === "area" || obj.type === "column") {
         option = {
           backgroundColor: "transparent",
@@ -1858,6 +2168,7 @@ async function renderWidgetChart(obj, bodyEl) {
           }],
         };
       } else if (obj.type === "map") {
+        // Harita renk skalası 0 ile en büyük değer arasında çalışır. Math.max(1, ...) ile en az 1 alınır; tüm değerler 0 olsa bile skala bozulmaz.
         const maxVal = Math.max(1, ...data.values);
         option = {
           backgroundColor: "transparent",
@@ -1886,6 +2197,10 @@ async function renderWidgetChart(obj, bodyEl) {
   }
 }
 
+/**
+ * Sayıyı Türkçe biçimde yazar (binlik ayırıcı nokta, ondalık virgül). Tam sayıysa ondalık yazmaz; değilse en fazla 2 ondalık basamak gösterir.
+ * Parametre n: sayı. Dönüş: metin.
+ */
 function formatNumber(n) {
   if (Number.isInteger(n)) return n.toLocaleString("tr-TR");
   return n.toLocaleString("tr-TR", { maximumFractionDigits: 2 });
@@ -1893,20 +2208,12 @@ function formatNumber(n) {
 
 /* ---- Export ---- */
 
-function csvEscape(val) {
-  if (val === null || val === undefined) return "";
-  const s = String(val);
-  if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-  return s;
-}
 
-function rowsToCsv(cols, rows) {
-  const BOM = "\uFEFF";
-  const lines = [cols.map(csvEscape).join(";")];
-  for (const row of rows) lines.push(row.map(csvEscape).join(";"));
-  return BOM + lines.join("\r\n");
-}
-
+/**
+ * Verilen içeriği dosya olarak indirtir. Tarayıcıda geçici bir bağlantı (Blob URL) oluşturup gizli bir <a> öğesine tıklatır.
+ * Parametreler: content = metin veya Blob; filename = dosya adı; mime = içerik türü (örn. text/csv).
+ * Blob URL'i 1 saniye sonra iptal edilir; hemen iptal edilirse indirme bozulabilir.
+ */
 function triggerDownload(content, filename, mime) {
   const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -1919,10 +2226,17 @@ function triggerDownload(content, filename, mime) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Dosya adında kullanılamayan karakterleri (boşluk, /, : gibi) alt çizgi yapar; Türkçe harfleri korur. En fazla 60 karakter. Boşsa 'widget' adı kullanılır.
+ */
 function safeFilename(s) {
   return (s || "widget").replace(/[^\w\-ğüşıöçĞÜŞİÖÇ]+/g, "_").slice(0, 60);
 }
 
+/**
+ * Bir widget'ı dışa aktarır. Grafikse PNG resmi (ECharts'tan) indirilir. Grafik yoksa veya tablo/KPI ise önbellekteki veri CSV olarak indirilir.
+ * Önce veri hiç çekilmemişse kullanıcıya 'önce veri bağlayın' uyarısı gösterilir.
+ */
 function exportWidget(obj) {
   const cached = widgetDataCache.get(obj.id);
   const nameBase = safeFilename(obj.title || obj.type);
@@ -1956,6 +2270,10 @@ function exportWidget(obj) {
 
 /* ---- Canvas render ---- */
 
+/**
+ * Dashboard tuvalini (sayfa) baştan çizer: boyutunu mm'den pikseli çevirerek ayarlar, arka plandaki kılavuz ızgarayı kurar ve her widget için bir düğüm üretir.
+ * Parametre canvasPage: tuval öğesi (#dash-canvas-page).
+ */
 function renderCanvasPage(canvasPage) {
   const dash = state.currentDashboard;
   canvasPage.innerHTML = "";
@@ -1983,6 +2301,15 @@ function rerenderWidget(objId) {
   pushHistory();
 }
 
+/**
+ * Tek bir widget'ın ekrandaki kutusunu (başlık, gövde, boyutlandırma tutamağı) üretir ve olayları bağlar:
+ * - Sil (✕): widget'ı listeden çıkarır.
+ * - Dışa aktar (⬇): exportWidget çağırır.
+ * - Tıklama + sürükleme: konumu değiştirir.
+ * - Köşe tutamağı: boyutu değiştirir.
+ * Sürükleme için mousemove/mouseup dinleyicileri geçici olarak document'e eklenir ve bırakılınca kaldırılır.
+ * Parametreler: obj = widget nesnesi; canvasPage = tuval öğesi. Dönüş: düğüm (henüz sayfaya eklenmemiş).
+ */
 function renderWidgetNode(obj, canvasPage) {
   const node = el("div", {
     class: `dash-widget ${state.selectedWidgetId === obj.id ? "selected" : ""}`,
@@ -2044,6 +2371,7 @@ function renderWidgetNode(obj, canvasPage) {
     const origX = obj.x, origY = obj.y;
     let moved = false;
 
+    // Sürükleme sırasında fare hareketini milimetreye çevirip widget konumunu günceller; negatif konuma gitmez (0'da durur). Yalnız düğümün stili değişir, tam yeniden çizim yapılmaz (akıcılık için).
     function onMove(ev) {
       moved = true;
       const dxMm = pxToMm(ev.clientX - startX);
@@ -2053,6 +2381,7 @@ function renderWidgetNode(obj, canvasPage) {
       node.style.left = mmToPx(obj.x) + "px";
       node.style.top = mmToPx(obj.y) + "px";
     }
+    // Fare bırakılınca dinleyicileri kaldırır. Gerçekten taşındıysa (moved) geçmişe bir kayıt ekler; sadece tıklama olduysa geçmişe yazılmaz.
     function onUp() {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
@@ -2069,6 +2398,7 @@ function renderWidgetNode(obj, canvasPage) {
     const origW = obj.w, origH = obj.h;
     let resized = false;
 
+    // Boyutlandırma sırasında genişlik ve yüksekliği milimetre olarak günceller; en az 15 mm olur. Grafik varsa yeni boyuta uyması için resize çağrılır.
     function onMove(ev) {
       resized = true;
       const dwMm = pxToMm(ev.clientX - startX);
@@ -2080,6 +2410,7 @@ function renderWidgetNode(obj, canvasPage) {
       const chart = chartInstances.get(obj.id);
       if (chart) chart.resize();
     }
+    // Boyutlandırma bitince dinleyicileri kaldırır; KPI kartı yeni boyuta göre yeniden çizilir (yazı boyutu yüksekliğe bağlı). Değişiklik varsa geçmişe kaydedilir.
     function onUp() {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
@@ -2096,6 +2427,11 @@ function renderWidgetNode(obj, canvasPage) {
 
 /* ---- Props panel + data binding ---- */
 
+/**
+ * Sağ taraftaki özellik panelini seçili widget'a göre çizer: başlık, renk, başlık yazı boyutu/rengi, konum ve boyut (mm) alanları ve veri bağlama bölümü.
+ * Hiçbir widget seçili değilse 'Bir widget seçin' yazar. Her alan değiştiğinde ilgili widget rerenderWidget ile yenilenir.
+ * Parametre panel: panel öğesi (#dash-props-panel).
+ */
 function renderPropsPanel(panel) {
   if (!panel) return;
   panel.innerHTML = "";
@@ -2140,6 +2476,9 @@ function renderPropsPanel(panel) {
   ].map(({ v, l }) => el("option", { value: v, selected: v === (styleCfg.titleFontSize || 11) ? "selected" : null }, l)));
   const titleColorInput = el("input", { type: "color", value: styleCfg.titleColor || "#e6e8ec" });
 
+  /**
+   * Widget'ın stil ayarlarından (başlık punto/rengi gibi) bir kısmını günceller. patch: değiştirilecek alanlar; mevcut ayarların geri kalanı korunur. Sonra widget yeniden çizilir.
+   */
   function updateStyleConfig(patch) {
     const current = getWidgetConfig(obj) || {};
     setWidgetConfig(obj, { ...current, ...patch });
@@ -2166,6 +2505,9 @@ function renderPropsPanel(panel) {
   renderDataBindingSection(panel, obj);
 }
 
+/**
+ * Widget türüne göre 'Veri Bağlama' bölümünü seçer: metin widget'ı için metin düzenleyici, tablo/matris için tablo bağlama, diğerleri için grafik bağlama.
+ */
 function renderDataBindingSection(panel, obj) {
   if (obj.type === "text") {
     const config = getWidgetConfig(obj) || {};
@@ -2180,6 +2522,9 @@ function renderDataBindingSection(panel, obj) {
     const boldCheck = el("input", { type: "checkbox" });
     boldCheck.checked = !!config.textBold;
 
+    /**
+     * Metin widget'ının tüm ayarlarını (metin, punto, renk, hizalama, kalın) toplayıp widget'a yazar ve yeniden çizer. Her alan değiştiğinde çağrılır.
+     */
     function persist() {
       const current = getWidgetConfig(obj) || {};
       setWidgetConfig(obj, {
@@ -2211,6 +2556,13 @@ function renderDataBindingSection(panel, obj) {
   renderChartDataBinding(panel, obj);
 }
 
+/**
+ * Tablo/matris widget'ının 'Veri Bağlama' bölümünü kurar. İki kaynak modu vardır:
+ * - Manuel Bağlantı: bağlantı > tablo > kolon seçilir.
+ * - Kayıtlı Sorgu: önceden kaydedilmiş bir veri seti kullanılır.
+ * Gösterilecek kolonlar tıklamayla seçilir; hiçbiri seçilmezse tüm kolonlar gösterilir.
+ * Parametre panel: özellik paneli; obj: widget nesnesi.
+ */
 function renderTableDataBinding(panel, obj) {
   const config = getWidgetConfig(obj) || {};
   const selectedCols = new Set(config.columns || []);
@@ -2231,12 +2583,20 @@ function renderTableDataBinding(panel, obj) {
   panel.appendChild(bodyBox);
   const columnsBox = el("div", { class: "pill-list", style: "margin-top:8px" });
 
+  /**
+   * Tablo bağlama ayarlarını (seçili kolonlar ve verilen ek alanlar, örn. conn_id/table) widget'a yazar ve widget'ı yeniden çizer.
+   * Parametre extra: bu seferde değişen ek alanlar (kaynak değişince çağrılır).
+   */
   function persistAndRerender(extra) {
     const current = getWidgetConfig(obj) || {};
     setWidgetConfig(obj, { ...current, columns: Array.from(selectedCols), ...extra });
     rerenderWidget(obj.id);
   }
 
+  /**
+   * Kolon seçim çiplerini çizer. Çipe tıklayınca kolon seçilir/çıkarılır ve hemen kaydedilip yeniden çizilir.
+   * Parametreler: availableCols = kolon listesi (manuelde {name} nesneleri, veri setinde düz metin dizisi); isDatasetCols = veri seti mi kaynağı olduğunu belirten bayrak.
+   */
   function renderColumnCheckboxes(availableCols, isDatasetCols) {
     columnsBox.innerHTML = "";
     const names = isDatasetCols ? availableCols : availableCols.map((c) => c.name);
@@ -2254,6 +2614,9 @@ function renderTableDataBinding(panel, obj) {
     if (!names.length) columnsBox.appendChild(el("p", { class: "muted small" }, "Önce kaynak seçin."));
   }
 
+  /**
+   * Tablo widget'ı için 'Manuel Bağlantı' formunu çizer: bağlantı ve tablo seçim kutuları, kolon çipleri ve 'Bağla ve Çiz' düğmesi. Açılışta daha önce seçilmiş bir bağlantı varsa tabloları otomatik yükler.
+   */
   function renderManualBinding() {
     const connSel = el("select", {}, [
       el("option", { value: "" }, "Bağlantı seçin…"),
@@ -2263,6 +2626,10 @@ function renderTableDataBinding(panel, obj) {
     ]);
     const tableSel = el("select", {}, [el("option", { value: "" }, "Önce bağlantı seçin")]);
 
+    /**
+     * Seçilen bağlantının tablolarını tablo kutusuna doldurur. selectedTable verilirse o tablo seçili gelir ve kolonları da yüklenir.
+     * Parametreler: connId = bağlantı kimliği; selectedTable = önceden seçili tablo (yoksa null).
+     */
     async function loadTablesInto(connId, selectedTable) {
       tableSel.innerHTML = "";
       tableSel.appendChild(el("option", { value: "" }, "Yükleniyor…"));
@@ -2277,6 +2644,9 @@ function renderTableDataBinding(panel, obj) {
       } catch (e) { handleApiError(e, "Tablolar alınamadı"); }
     }
 
+    /**
+     * Seçilen tablonun kolonlarını çeker, son bağlantı/tablo bilgisini config'e yazar ve kolon çiplerini çizer. Hata olursa kullanıcıya bildirilir.
+     */
     async function loadColumnsInto(connId, table) {
       try {
         const res = await api.listColumns(connId, table);
@@ -2302,6 +2672,9 @@ function renderTableDataBinding(panel, obj) {
     if (config.conn_id && !config.datasetId) loadTablesInto(config.conn_id, config.table);
   }
 
+  /**
+   * Tablo widget'ı için 'Kayıtlı Sorgu' seçimini çizer: veri setleri listesini sunucudan çeker, seçilince kolonlarını gösterir. Veri seti değişince (olay) kolon seçimi sıfırlanır.
+   */
   function renderDatasetBinding() {
     const dsSel = el("select", {}, [el("option", { value: "" }, "Yükleniyor…")]);
     bodyBox.appendChild(el("div", {}, [el("label", { class: "small" }, "Kayıtlı Sorgu"), dsSel]));
@@ -2335,6 +2708,11 @@ function renderTableDataBinding(panel, obj) {
   if (sourceMode === "manual") renderManualBinding(); else renderDatasetBinding();
 }
 
+/**
+ * Grafik widget'ları için 'Veri Bağlama' bölümünü kurar: kaynak (manuel veya veri seti), etiket (X/Y ekseni) kolonu, değer kolonu (çok seriyse birden çok) ve toplama (agg) seçimi.
+ * Çok seri türlerde (MULTI_SERIES_TYPES) değer kolonları çip olarak seçilir; diğer türlerde tek bir değer kutusu kullanılır.
+ * Harita için ülke adlarının İngilizce olması gerektiği not olarak yazılır.
+ */
 function renderChartDataBinding(panel, obj) {
   const config = getWidgetConfig(obj) || {};
   let sourceMode = config.datasetId ? "dataset" : "manual";
@@ -2368,6 +2746,10 @@ function renderChartDataBinding(panel, obj) {
     (a) => el("option", { value: a, selected: a === (config.agg || "sum") ? "selected" : null }, a)
   ));
 
+  /**
+   * Kolon adlarından bir seçim kutusu için seçenek öğeleri üretir. İlk seçenek '-' (seçilmedi) olur; selected ile önceden seçili kolon işaretlenir.
+   * Parametreler: names = kolon adları; selected = seçili ad.
+   */
   function columnOptionsFromNames(names, selected) {
     return [el("option", { value: "" }, "-")].concat(
       names.map((n) => el("option", { value: n, selected: n === selected ? "selected" : null }, n))
@@ -2376,6 +2758,9 @@ function renderChartDataBinding(panel, obj) {
 
   let lastAvailableNames = [];
 
+  /**
+   * Çok seri grafikler için değer kolonu çiplerini çizer. Çipe tıklanınca seri eklenir/çıkarılır ve ayar hemen kaydedilir.
+   */
   function renderValueColsChips() {
     valueColsBox.innerHTML = "";
     for (const name of lastAvailableNames) {
@@ -2394,6 +2779,10 @@ function renderChartDataBinding(panel, obj) {
     if (!lastAvailableNames.length) valueColsBox.appendChild(el("p", { class: "muted small" }, "Önce kaynak seçin."));
   }
 
+  /**
+   * Etiket ve değer kolonu kutularını verilen kolon adlarıyla doldurur. namesProvider: { names, optionsFor(seçili) } şeklinde bir nesne; optionsFor, her kutu için seçenek öğeleri döndürür.
+   * Çok seri türde değer kutusu yerine çip listesi yenilenir.
+   */
   function fillLabelValueSelects(namesProvider) {
     lastAvailableNames = namesProvider.names;
     labelColSel.innerHTML = "";
@@ -2406,6 +2795,10 @@ function renderChartDataBinding(panel, obj) {
     }
   }
 
+  /**
+   * Grafik bağlama ayarlarını (etiket, değer kolonları/kolonu, toplama ve kaynak bilgisi) widget'a yazar ve yeniden çizer. Çok seri türlerde valueCols, diğerlerinde valueCol kaydedilir.
+   * Parametre extra: bu seferde değişen ek alanlar (örn. kaynak değişince).
+   */
   function persistAndRerender(extra) {
     const current = getWidgetConfig(obj) || {};
     const patch = isMulti
@@ -2425,6 +2818,9 @@ function renderChartDataBinding(panel, obj) {
     sourceMode === "dataset" ? { datasetId: config._lastDatasetId } : { conn_id: config._lastConnId, table: config._lastTable }
   ));
 
+  /**
+   * Manuel ve veri seti modlarında ortak olan alanları ekler: etiket kolonu, değer kolonu/kolonları ve toplama seçimi. Her iki mod da bu alanları kullanır, bu yüzden tek yerde tutulur.
+   */
   function appendSharedFields() {
     const axisLabel = obj.type === "bar" ? "Etiket kolonu (Y ekseni)" : "Etiket kolonu (X ekseni)";
     bodyBox.appendChild(el("div", {}, [el("label", { class: "small" }, axisLabel), labelColSel]));
@@ -2439,6 +2835,9 @@ function renderChartDataBinding(panel, obj) {
     bodyBox.appendChild(el("div", {}, [el("label", { class: "small" }, "Toplama (aggregation)"), aggSel]));
   }
 
+  /**
+   * Grafik widget'ı için 'Manuel Bağlantı' formunu çizer (bağlantı > tablo > ortak alanlar > 'Bağla ve Çiz'). Tablo seçilince kolonlar çekilir ve kutulara yazılır.
+   */
   function renderManualBinding() {
     const connSel = el("select", {}, [
       el("option", { value: "" }, "Bağlantı seçin…"),
@@ -2448,6 +2847,9 @@ function renderChartDataBinding(panel, obj) {
     ]);
     const tableSel = el("select", {}, [el("option", { value: "" }, "Önce bağlantı seçin")]);
 
+    /**
+     * Seçilen bağlantının tablolarını grafik formundaki tablo kutusuna doldurur. selectedTable verilirse o tablo seçili gelir ve kolonları yüklenir. Tablo tablo-bağlama formundaki fonksiyonla aynı işi yapar, ama farklı kutuları günceller.
+     */
     async function loadTablesInto(connId, selectedTable) {
       tableSel.innerHTML = "";
       tableSel.appendChild(el("option", { value: "" }, "Yükleniyor…"));
@@ -2462,12 +2864,16 @@ function renderChartDataBinding(panel, obj) {
       } catch (e) { handleApiError(e, "Tablolar alınamadı"); }
     }
 
+    /**
+     * Seçilen tablonun kolonlarını çekip etiket ve değer kutularını doldurur. Son bağlantı ve tablo bilgisi config'e yazılır ki sonraki kaydetme doğru kaynağı kullansın.
+     */
     async function loadColumnsInto(connId, table) {
       try {
         const res = await api.listColumns(connId, table);
         config._lastConnId = connId; config._lastTable = table;
         const names = (res.columns || []).map((c) => c.name);
-        fillLabelValueSelects({ names, optionsFor: (sel) => columnOptionsFromNames(names, sel) });
+        // optionsFor, kutulardaki seçenekleri üretmek için kullanılır: kolon adları (names) ve hangi değerin seçili olacağı verilir. Böylece aynı kutu hem manuel hem veri seti modunda çalışır.
+        fillLabelValueSelects({ names, /* optionsFor: her kutu için seçenek üreten fonksiyon */ optionsFor: (sel) => columnOptionsFromNames(names, sel) });
       } catch (e) { handleApiError(e, "Kolonlar alınamadı"); }
     }
 
@@ -2485,6 +2891,9 @@ function renderChartDataBinding(panel, obj) {
     if (config.conn_id && !config.datasetId) loadTablesInto(config.conn_id, config.table);
   }
 
+  /**
+   * Grafik widget'ı için 'Kayıtlı Sorgu' formunu çizer. Veri setleri listelenir; seçilince kolonları çekilir ve etiket/değer kutularına yazılır. Liste yüklenemezse hata bildirilir.
+   */
   function renderDatasetBinding() {
     const dsSel = el("select", {}, [el("option", { value: "" }, "Yükleniyor…")]);
     bodyBox.appendChild(el("div", {}, [el("label", { class: "small" }, "Kayıtlı Sorgu"), dsSel]));
@@ -2505,7 +2914,8 @@ function renderChartDataBinding(panel, obj) {
         try {
           const cols = await fetchDatasetColumns(dsSel.value);
           config._lastDatasetId = dsSel.value;
-          fillLabelValueSelects({ names: cols, optionsFor: (sel) => columnOptionsFromNames(cols, sel) });
+          // Veri setinden gelen kolon adları, aynı optionsFor kalıbıyla etiket ve değer kutularına dağıtılır (cols).
+          fillLabelValueSelects({ names: cols, /* optionsFor: her kutu için seçenek üreten fonksiyon */ optionsFor: (sel) => columnOptionsFromNames(cols, sel) });
         } catch (e) { handleApiError(e, "Dataset kolonları alınamadı"); }
       });
       if (config.datasetId) dsSel.dispatchEvent(new Event("change"));
@@ -2519,6 +2929,10 @@ function renderChartDataBinding(panel, obj) {
  * 5) Sürücüler (Drivers)
  * ==========================================================*/
 
+/**
+ * 'Sürücüler' ekranını kurar: sürücü listesini sunucudan çeker ve tabloya çevirir. Hata olursa kullanıcıya bildirilir.
+ * Parametre root: ekranın ekleneceği kapsayıcı.
+ */
 async function renderDriversView(root) {
   root.appendChild(el("h2", {}, "Veritabanı Sürücüleri"));
   root.appendChild(el("p", { class: "muted" },
@@ -2538,12 +2952,17 @@ async function renderDriversView(root) {
   }
 }
 
+/**
+ * Veritabanı sürücülerinin tablosunu çizer: tip, durum (kurulu/kurulu değil) ve 'Kur' düğmesi. Düğme yalnız admin ve kurulu olmayan sürücüler için görünür.
+ * DİKKAT: Bu gizleme yalnız görünüm içindir; yetki kontrolü sunucuda yapılmalıdır.
+ */
 function renderDriversTable(container) {
   container.innerHTML = "";
   const table = el("table");
   table.appendChild(el("thead", {}, el("tr", {}, ["Veritabanı Tipi", "Durum", ""].map((h) => el("th", {}, h)))));
   const tbody = el("tbody");
   for (const d of state.drivers) {
+    // Kur düğmesi gizleme sadece arayüz içindir. Asıl yetki kontrolü sunucudadır; bir kullanıcı API'yi doğrudan çağırırsa bu gizleme onu durdurmaz.
     const installBtn = el("button", { class: "btn btn-sm" }, "Kur");
     if (d.installed || state.role !== "admin") installBtn.style.display = "none";
     installBtn.addEventListener("click", () => withBusy(installBtn, async () => {
@@ -2568,6 +2987,9 @@ function renderDriversTable(container) {
  * Uygulama başlangıcı
  * ==========================================================*/
 
+/**
+ * Uygulamanın başlangıç noktası. Sayfa (DOMContentLoaded) hazır olunca çağrılır: giriş ve menü olaylarını bağlar, tema uygular; kayıtlı oturum varsa uygulama kabuğunu, yoksa giriş ekranını gösterir.
+ */
 function boot() {
   initAuthScreen();
   initNav();

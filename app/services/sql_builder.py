@@ -21,14 +21,25 @@ from app.services.expression_builder import validate_and_compile, ExpressionErro
 
 class SQLBuilder:
 
-    def _select_columns(self, base_table: str, fields: dict[str, str]) -> list[str]:
+    """
+    SQL metnini parça parça kuran sınıf.
+    Tablo ve kolon adları quote_identifier ile güvenli hale getirilir; değerler ise parametre olarak (:p_0 gibi) gönderilir.
+    """
+    def _select_columns(self, base_table: str, fields: dict[str, str], dialect: str = "sqlite") -> list[str]:
+        """
+        SELECT listesindeki kolonları üretir. role 'off' olan kolonlar atlanır; hiç kolon kalmazsa tüm kolonlar (*) döner.
+        Dönüş: tırnaklı kolon metinlerinin listesi.
+        """
         cols = []
         for key, role in fields.items():
+            # Rolü 'off' olan kolon SELECT'e eklenmez.
             if role == "off":
                 continue
-            cols.append(quote_identifier(key) if "." in key
-                        else f"{quote_identifier(base_table)}.{quote_identifier(key)}")
-        return cols or [f"{quote_identifier(base_table)}.*"]
+            # Noktalı ad (tablo.kolon) zaten tam nitelikli; nokta yoksa temel tablo adıyla birlikte yazılır.
+            cols.append(quote_identifier(key, dialect) if "." in key
+                        else f"{quote_identifier(base_table, dialect)}.{quote_identifier(key, dialect)}")
+        # Hiç kolon seçilmediyse tüm kolonlar (*) alınır.
+        return cols or [f"{quote_identifier(base_table, dialect)}.*"]
 
     def _calculated_columns(
         self,
@@ -56,6 +67,7 @@ class SQLBuilder:
         if not calculated_fields:
             return []
 
+        # Formüllerde kullanılabilecek kolon adları. Noktalı adlarda sadece son parça alınır.
         allowed_columns = {
             (key.split(".")[-1]) for key, role in fields.items() if role != "off"
         }
@@ -68,24 +80,32 @@ class SQLBuilder:
                 compiled = validate_and_compile(cf.formula, db_type, allowed_columns)
             except ExpressionError as e:
                 raise ValueError(f"Hesaplanmış alan {cf.name!r}: {e}")
-            parts.append(f"{compiled} AS {quote_identifier(cf.name)}")
+            parts.append(f"{compiled} AS {quote_identifier(cf.name, db_type)}")
         return parts
 
-    def _join_clauses(self, joins: list[JoinDef]) -> str:
+    def _join_clauses(self, joins: list[JoinDef], dialect: str = "sqlite") -> str:
+        """JOIN satırlarını üretir (ör. 'LEFT JOIN t2 ON t1.f1 = t2.f2'). Birden çok join satır satır birleştirilir."""
         parts = []
         for j in joins:
-            t1 = quote_identifier(j.t1); f1 = quote_identifier(j.f1)
-            t2 = quote_identifier(j.t2); f2 = quote_identifier(j.f2)
+            # Her join parçası önce quote_identifier'dan geçer; güvenli olmayan bir ad ValueError verir.
+            t1 = quote_identifier(j.t1, dialect); f1 = quote_identifier(j.f1, dialect)
+            t2 = quote_identifier(j.t2, dialect); f2 = quote_identifier(j.f2, dialect)
+            # JOIN tipi (JOIN, LEFT JOIN vb.) şema seviyesinde whitelist'ten geçtiği için tırnaksız yazılabilir.
             parts.append(f"{j.type} {t2} ON {t1}.{f1} = {t2}.{f2}")
         return "\n".join(parts)
 
-    def _where_clauses(self, filters: list[FilterDef]) -> tuple[str, dict[str, Any]]:
+    def _where_clauses(self, filters: list[FilterDef], dialect: str = "sqlite") -> tuple[str, dict[str, Any]]:
+        """
+        WHERE koşullarını üretir. Dönüş: (where metni, parametre sözlüğü).
+        Koşullar AND ile bağlanır. IN için her değer ayrı parametre olur. Filtre yoksa boş metin döner.
+        """
         parts: list[str] = []
         params: dict[str, Any] = {}
 
         for i, f in enumerate(filters):
             op  = f.operator   # zaten whitelist'ten geçti (FilterDef validator)
-            col = f"{quote_identifier(f.table)}.{quote_identifier(f.column)}"
+            col = f"{quote_identifier(f.table, dialect)}.{quote_identifier(f.column, dialect)}"
+            # Parametre adı filtre sırasına göre üretilir (p_0, p_1...). Değer SQL metnine değil, parametre olarak gider.
             p   = f"p_{i}"
 
             # Whitelist double-check (DES-4)
@@ -98,21 +118,25 @@ class SQLBuilder:
 
             if op in ("IN", "NOT IN"):
                 vals = f.value if isinstance(f.value, list) else [f.value]
+                # Her IN değeri için ayrı bir yer tutucu (:p_0_0, :p_0_1 ...) üretilir.
                 placeholders = ", ".join(f":{p}_{j}" for j in range(len(vals)))
                 parts.append(f"{col} {op} ({placeholders})")
                 for j, v in enumerate(vals):
                     params[f"{p}_{j}"] = v
                 continue
 
+            # BETWEEN iki parametre ister: alt sınır ve üst sınır.
             if op == "BETWEEN":
                 parts.append(f"{col} BETWEEN :{p}_a AND :{p}_b")
                 params[f"{p}_a"] = f.value
                 params[f"{p}_b"] = f.value2
                 continue
 
+            # Diğer operatörler (=, >, LIKE vb.) tek parametre alır.
             parts.append(f"{col} {op} :{p}")
             params[p] = f.value
 
+        # Tüm koşullar AND ile birleştirilir; hiç koşul yoksa WHERE yazılmaz.
         where = "WHERE " + "\nAND ".join(parts) if parts else ""
         return where, params
 
@@ -132,12 +156,13 @@ class SQLBuilder:
         formula_only_columns: list[str] | None = None,
     ) -> tuple[str, dict[str, Any]]:
 
-        if db_type == "oracle":
-            base_table = base_table.upper()
-            fields = {k.upper(): v for k, v in fields.items()}
-            if schema:
-                schema = schema.upper()
-        select_cols = self._select_columns(base_table, fields)
+        """
+        Tüm parçaları birleştirip SQL metni ve parametre sözlüğü döner.
+        Sayfalama db_type'a göre yazılır (LIMIT, TOP veya FETCH). limit en fazla satır sayısı, offset atlanacak satır sayısıdır.
+        Geçersiz kolon adı ya da ifade ValueError fırlatır.
+        """
+        # Oracle büyütmesi quote_identifier'da tek merkezden yapılır (burada tekrar yok).
+        select_cols = self._select_columns(base_table, fields, db_type)
         select_cols += self._calculated_columns(
             fields, calculated_fields or [], db_type, formula_only_columns
         )
@@ -148,15 +173,17 @@ class SQLBuilder:
             select_prefix = f"SELECT TOP {int(limit)}"
 
         select_sql = select_prefix + "\n  " + ",\n  ".join(select_cols)
+        # Şema verilmişse tablo adı 'şema.tablo' biçiminde yazılır.
         qualified_table = f"{schema}.{base_table}" if schema else base_table
-        from_sql   = f"FROM {quote_identifier(qualified_table)}"
-        join_sql   = self._join_clauses(joins)
-        where_sql, params = self._where_clauses(filters)
+        from_sql   = f"FROM {quote_identifier(qualified_table, db_type)}"
+        join_sql   = self._join_clauses(joins, db_type)
+        where_sql, params = self._where_clauses(filters, db_type)
 
-        group_sql = ("GROUP BY " + ", ".join(quote_identifier(g) for g in group_by)
+        # GROUP BY ve ORDER BY kolonları da quote_identifier'dan geçer. Sıralamada başta '-' varsa DESC olur.
+        group_sql = ("GROUP BY " + ", ".join(quote_identifier(g, db_type) for g in group_by)
                      if group_by else "")
         order_sql = ("ORDER BY " + ", ".join(
-                         quote_identifier(o.lstrip("-")) + (" DESC" if o.startswith("-") else "")
+                         quote_identifier(o.lstrip("-"), db_type) + (" DESC" if o.startswith("-") else "")
                          for o in order_by)
                      if order_by else "")
 
@@ -165,6 +192,7 @@ class SQLBuilder:
             if clause:
                 parts.append(clause)
 
+        # Sayfalama veritabanına göre farklı yazılır: Oracle FETCH, MSSQL OFFSET/FETCH veya TOP, diğerleri LIMIT.
         if db_type == "oracle":
             if int(offset) > 0:
                 limit_clause = f"OFFSET {int(offset)} ROWS FETCH NEXT {int(limit)} ROWS ONLY"
@@ -179,6 +207,7 @@ class SQLBuilder:
                 parts.append(f"OFFSET {int(offset)} ROWS FETCH NEXT {int(limit)} ROWS ONLY")
             # offset == 0 durumunda TOP zaten SELECT'e eklendi, ayrı limit_clause gerekmiyor
         else:
+            # limit ve offset int() ile sayıya çevrilir; metin olarak SQL'e girmez (enjeksiyona karşı).
             limit_clause = f"LIMIT {int(limit)}"
             if int(offset) > 0:
                 limit_clause += f" OFFSET {int(offset)}"
@@ -187,10 +216,12 @@ class SQLBuilder:
         return "\n".join(parts), params
 
     def estimate_complexity(self, joins: list, filters: list, group_by: list) -> str:
+        """Sorgunun karmaşıklığını low / medium / high olarak tahmin eder (join, filtre ve gruplama sayısına göre). Sadece önizleme için kullanılır."""
         score = len(joins) * 2 + len(filters) + len(group_by)
         if score <= 2:  return "low"
         if score <= 6:  return "medium"
         return "high"
 
 
+# Modül yüklenince tek bir SQLBuilder nesnesi oluşturulur ve tüm çağıranlar bunu paylaşır.
 sql_builder = SQLBuilder()

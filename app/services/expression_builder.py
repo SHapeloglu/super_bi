@@ -18,6 +18,7 @@ from __future__ import annotations
 import sqlglot
 from sqlglot import exp
 
+# SBX derleyicisi yüklenemezse (ör. bağımlılık eksik) modül çökmez; sadece SQL modu kullanılır.
 try:
     from app.services.sbx_compiler import compile_sbx, SBXError
 except ImportError:
@@ -30,10 +31,15 @@ DIALECT_MAP = {
     "mysql":      "mysql",
     "mssql":      "tsql",
     "oracle":     "oracle",
+    # sqlglot 25.34.1 'doris' lehçesini içerir (MySQL'den türetilmiş). Doris'e özgü
+    # fonksiyon/sözdizimi farkları için "mysql" yerine bu kullanılır.
+    "doris":      "doris",
 }
 
+# Formül uzunluk sınırı: 500 karakter. Çok uzun formüller hem güvenlik hem performans için reddedilir.
 MAX_FORMULA_LENGTH = 500
 
+# Formülde kullanılabilecek SQL düğüm türleri (whitelist). Listede olmayan her şey reddedilir.
 ALLOWED_NODE_TYPES = (
     exp.Column, exp.Identifier, exp.Literal, exp.Null, exp.Paren, exp.Tuple,
     exp.Add, exp.Sub, exp.Mul, exp.Div, exp.Mod, exp.Neg,
@@ -63,6 +69,7 @@ def validate_and_compile(formula: str, db_type: str, allowed_columns: set[str]) 
         raise ExpressionError("Formül boş olamaz")
     if len(formula) > MAX_FORMULA_LENGTH:
         raise ExpressionError(f"Formül çok uzun (maksimum {MAX_FORMULA_LENGTH} karakter)")
+    # Noktalı virgül yasak: birden çok ifadenin birlikte çalıştırılmasını (enjeksiyon) engeller.
     if ";" in formula:
         raise ExpressionError("Formülde noktalı virgül (;) kullanılamaz")
 
@@ -70,15 +77,23 @@ def validate_and_compile(formula: str, db_type: str, allowed_columns: set[str]) 
     if dialect is None:
         raise ExpressionError(f"Desteklenmeyen veritabanı tipi: {db_type!r}")
 
+    # Oracle: quote_identifier kolonları büyük harfe çevirir; formül kolonları da aynı biçimde karşılaştırılır.
+    fold_case = db_type == "oracle"
+    if fold_case:
+        allowed_columns = {c.upper() for c in allowed_columns}
+
     # ADIM 1: SBX olarak dene (eğer [ varsa, SBX olabilir)
+    # Köşeli parantez '[' varsa formül önce SBX (SuperBI ifade dili) olarak denenir.
     if "[" in formula and compile_sbx is not None:
         try:
             compiled_sql = compile_sbx(formula, dialect=dialect)
             # SBX sonucu SQL olarak doğrula (güvenlik)
+            # SBX'ten üretilen SQL de tekrar ayrıştırılıp aynı kurallarla kontrol edilir.
             tree = sqlglot.parse_one(compiled_sql, read=dialect)
             if tree:
-                _validate_node_tree(tree, allowed_columns)
+                _validate_node_tree(tree, allowed_columns, fold_case)
                 return compiled_sql
+        # DİKKAT: Burada her hata sessizce yutulur ve SQL denemesine geçilir. SBX'in neden çalışmadığı kullanıcıya gösterilmez.
         except (SBXError, ExpressionError, Exception):
             # SBX başarısız oldu, SQL olarak devam et
             pass
@@ -92,7 +107,7 @@ def validate_and_compile(formula: str, db_type: str, allowed_columns: set[str]) 
     if tree is None:
         raise ExpressionError("Formül boş bir ifadeye çözüldü")
 
-    _validate_node_tree(tree, allowed_columns)
+    _validate_node_tree(tree, allowed_columns, fold_case)
 
     try:
         compiled = tree.sql(dialect=dialect)
@@ -105,7 +120,9 @@ def validate_and_compile(formula: str, db_type: str, allowed_columns: set[str]) 
     return compiled
 
 
-def _validate_node_tree(root: exp.Expression, allowed_columns: set[str]) -> None:
+def _validate_node_tree(root: exp.Expression, allowed_columns: set[str], fold_case: bool = False) -> None:
+    """Formül ağacındaki her düğümü kontrol eder. İzin listesinde olmayan bir düğüm, izinsiz bir kolon adı veya yorum varsa ExpressionError fırlatır."""
+    # Ağaçtaki her düğüm tek tek kontrol edilir.
     for node in root.walk():
         if not isinstance(node, ALLOWED_NODE_TYPES):
             raise ExpressionError(
@@ -113,8 +130,10 @@ def _validate_node_tree(root: exp.Expression, allowed_columns: set[str]) -> None
                 f"({node.sql() if hasattr(node, 'sql') else node!r})"
             )
         if isinstance(node, exp.Column):
-            col_name = node.name
+            col_name = node.name.upper() if fold_case else node.name
+            # Kolon adı, bu sorguda var olan kolonlardan biri olmalı (whitelist).
             if col_name not in allowed_columns:
                 raise ExpressionError(f"Bilinmeyen veya izin verilmeyen kolon: {col_name!r}")
+        # Yorum satırları (-- ve /* */) yasak; SQL içine gizlenmiş komut taşınabileceği için.
         if getattr(node, "comments", None):
             raise ExpressionError("Formülde yorum satırı (-- veya /* */) kullanılamaz")

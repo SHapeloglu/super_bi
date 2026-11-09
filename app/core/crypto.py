@@ -32,14 +32,17 @@ from cryptography.fernet import Fernet, InvalidToken
 
 @lru_cache(maxsize=1)
 def _get_fernet() -> Fernet:
-    key = os.environ.get("DATALENS_DB_ENCRYPTION_KEY")
+    """
+    Şifreleme nesnesini (Fernet) döner. Anahtar DATALENS_DB_ENCRYPTION_KEY ortam değişkeninden okunur.
+    Anahtar yoksa her süreç için rastgele üretilir; bu durumda restart sonrası eski şifreler çözülemez.
+    """
+    # Anahtar veritabanında değil, ortam değişkeninde tutulur. Veritabanı dosyası tek başına şifreleri çözdürmez.
+    key = os.environ.get("DATALENS_DB_ENCRYPTION_KEY", "").strip()
     if not key:
-        # Sabit bir anahtar verilmemişse süreç ömrü boyunca geçerli rastgele
-        # bir anahtar üretilir — restart'ta önceki şifreler çözülemez olur.
-        # Bu, prod için MUTLAKA env değişkeniyle sabitlenmesi gereken bir
-        # durumdur; burada çökme yerine geçici bir anahtarla devam ediyoruz
-        # ki geliştirme ortamında sürtünme yaratmasın.
-        key = Fernet.generate_key().decode()
+        # Faz 0.6: rastgele geçici anahtar üretilmez. Restart'ta önceki şifreler çözülemez
+        # olur ve kayıtlı bağlantılar sessizce kırılır; bu yüzden açıkça hata veriyoruz.
+        raise RuntimeError("DATALENS_DB_ENCRYPTION_KEY tanımlı değil")
+    # Fernet anahtarı bayt olarak bekler; metin olarak gelirse bayta çevrilir.
     return Fernet(key.encode() if isinstance(key, str) else key)
 
 
@@ -60,5 +63,6 @@ def decrypt_password(ciphertext: str | None) -> str | None:
         return None
     try:
         return _get_fernet().decrypt(ciphertext.encode()).decode()
+    # DİKKAT: Exception tüm hataları kapsadığı için diğer türler gereksizdir. Hata sessizce yutulur ve log yazılmaz; sorun teşhisi zorlaşabilir.
     except (InvalidToken, ValueError, Exception):
         return None

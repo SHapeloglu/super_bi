@@ -34,11 +34,14 @@ from app.core.connector_registry import quote_identifier
 logger = logging.getLogger(__name__)
 
 # Kategorik sınıflandırma eşikleri (ARCHITECTURE.md'deki tanıma göre)
+# Kategori aralığı: farklı değer oranı %0.1 ile %10 arasındaysa kolon kategorik sayılır. Değerler sezgiseldir (ARCHITECTURE.md'ye göre).
 _CATEGORICAL_RATIO_MIN = 0.001
 _CATEGORICAL_RATIO_MAX = 0.10
 _IDENTIFIER_RATIO_MIN = 0.98  # neredeyse tam tekillik = identifier
 
+# Tip adında bu kelimelerden biri geçiyorsa tarih sayılır (ör. 'datetime2' içinde 'date' vardır). Basit bir metin kontrolüdür.
 _DATE_TYPE_HINTS = ("date", "time", "timestamp")
+# Sayısal tipler için ipuçları. Tip adı bu kelimeleri içeriyorsa sayısal kabul edilir (ör. 'bigint' içinde 'int').
 _NUMERIC_TYPE_HINTS = (
     "int", "float", "double", "decimal", "numeric", "real", "money",
 )
@@ -46,6 +49,10 @@ _NUMERIC_TYPE_HINTS = (
 
 @dataclass
 class ColumnProfile:
+    """
+    Bir kolonun profili: adı, veri tipi, farklı değer sayısı, oran (farklı değer / satır sayısı) ve sınıfı.
+    sınıf: identifier, categorical, metric, date_axis, unknown ya da unsupported (desteklenmeyen ad).
+    """
     name: str
     dtype: str
     distinct_count: int
@@ -53,6 +60,7 @@ class ColumnProfile:
     classification: str  # identifier | categorical | metric | date_axis | unknown
 
     def to_dict(self) -> dict:
+        """Kolon profilini JSON uyumlu bir sözlüğe çevirir. Oran 6 ondalık basamağa yuvarlanır."""
         return {
             "name": self.name,
             "dtype": self.dtype,
@@ -64,12 +72,14 @@ class ColumnProfile:
 
 @dataclass
 class TableProfile:
+    """Bir tablonun profili: satır sayısı, grain (her satırı tekil yapan kolonlar) ve kolon profilleri."""
     table_name: str
     row_count: int
     grain_columns: list[str]
     columns: list[ColumnProfile] = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        """Tablo profilini sözlüğe çevirir; kolonlar da kendi to_dict metoduyla çevrilir."""
         return {
             "table_name": self.table_name,
             "row_count": self.row_count,
@@ -80,6 +90,10 @@ class TableProfile:
 
 @dataclass
 class RelationshipCandidate:
+    """
+    Tablolar arasındaki olası bir ilişki (table_a.column_a -> table_b.column_b).
+    source 'fk_constraint' (DB'nin kendi tanımı) ya da 'inferred' (istatistiksel tahmin) olabilir.
+    """
     table_a: str
     column_a: str
     table_b: str
@@ -92,6 +106,7 @@ class RelationshipCandidate:
     verified: bool
 
     def to_dict(self) -> dict:
+        """İlişki bilgisini sözlüğe çevirir. Oran ve güven değerleri yuvarlanır."""
         return {
             "table_a": self.table_a,
             "column_a": self.column_a,
@@ -108,8 +123,9 @@ class RelationshipCandidate:
         }
 
 
-def _q(identifier: str) -> str:
-    return quote_identifier(identifier)
+def _q(identifier: str, dialect: str = "sqlite") -> str:
+    """quote_identifier'ı çağıran kısa yardımcı. Güvenli olmayan bir ad gelirse ValueError fırlatır."""
+    return quote_identifier(identifier, dialect)
 
 
 def _split_schema_table(table_name: str) -> tuple[str | None, str]:
@@ -166,6 +182,7 @@ def discover_fk_relationships(
             ref_table = fk.get("referred_table")
             local_cols = fk.get("constrained_columns") or []
             ref_cols = fk.get("referred_columns") or []
+            # Hedef tablo ya da kolon bilgisi eksikse bu FK atlanır.
             if not ref_table or not local_cols or not ref_cols:
                 continue
             # Kompozit FK'lerde sıralı eşleşme varsayılır
@@ -192,16 +209,20 @@ def discover_fk_relationships(
 # ---------------------------------------------------------------------------
 
 def _row_count(engine: Engine, table_name: str) -> int:
+    """Tablodaki toplam satır sayısını COUNT(*) ile döner."""
+    # COUNT(*) büyük tablolarda yavaş olabilir; her çağrıda tam tarama yapılır.
     with engine.connect() as conn:
-        row = conn.execute(text(f"SELECT COUNT(*) AS n FROM {_q(table_name)}")).fetchone()
+        row = conn.execute(text(f"SELECT COUNT(*) AS n FROM {_q(table_name, engine.dialect.name)}")).fetchone()
     return int(row[0]) if row else 0
 
 
 def _distinct_count(engine: Engine, table_name: str, column: str) -> int:
+    """Kolondaki farklı (tekil) değer sayısını COUNT(DISTINCT) ile döner. NULL değerler sayılmaz."""
     with engine.connect() as conn:
+        # COUNT(DISTINCT) büyük tablolarda pahalıdır; tek kolon için tam tarama yapılır.
         row = conn.execute(
             text(
-                f"SELECT COUNT(DISTINCT {_q(column)}) AS n FROM {_q(table_name)}"
+                f"SELECT COUNT(DISTINCT {_q(column, engine.dialect.name)}) AS n FROM {_q(table_name, engine.dialect.name)}"
             )
         ).fetchone()
     return int(row[0]) if row else 0
@@ -215,7 +236,7 @@ def detect_grain(
     ise o sütun tablonun grain'i). Hiçbir tek sütun tekillik sağlamıyorsa,
     tüm sütunların birleşimini kompozit grain adayı olarak test eder.
     Not: tam kombinasyon taraması (powerset) büyük tablolarda maliyetli
-    olduğundan MVP c~apsamında tek sütun + tam-küme fallback yeterli kabul
+    olduğundan MVP kapsamında tek sütun + tam-küme fallback yeterli kabul
     edilir; ARCHITECTURE.md'deki "kombinasyonlar test edilir" ifadesi bu
     iki adımı kapsar.
     """
@@ -230,18 +251,21 @@ def detect_grain(
             continue  # desteklenmeyen (örn. boşluklu) kolon adı — atla
         safe_columns.append(col)
         distinct = _distinct_count(engine, table_name, col)
+        # Bu kolon tek başına her satırı farklı yapıyorsa grain budur; döngü burada biter.
         if distinct == row_count:
             return [col]
 
     # Kompozit fallback: tüm (desteklenen) sütunları birlikte test et
     columns = safe_columns
     if len(columns) > 1:
-        col_list = ", ".join(_q(c) for c in columns)
+        col_list = ", ".join(_q(c, engine.dialect.name) for c in columns)
+        # Tek kolon grain olmadıysa tüm desteklenen kolonların birlikte benzersizliği denenir.
         with engine.connect() as conn:
             row = conn.execute(
                 text(
+                    # Alt sorgu: kolon kombinasyonlarının farklı satır sayısını sayar. Bu sayı toplam satır sayısına eşitse kombinasyon grain'dir.
                     f"SELECT COUNT(*) AS n FROM (SELECT DISTINCT {col_list} "
-                    f"FROM {_q(table_name)}) AS sub"
+                    f"FROM {_q(table_name, engine.dialect.name)}) AS sub"
                 )
             ).fetchone()
         composite_distinct = int(row[0]) if row else 0
@@ -258,6 +282,10 @@ def detect_grain(
 def classify_columns(
     engine: Engine, table_name: str, row_count: int, pk_columns: set[str]
 ) -> list[ColumnProfile]:
+    """
+    Tablonun her kolonunu sınıflandırır. pk_columns birincil anahtar kolonlarıdır ve her zaman identifier sayılır.
+    Satır sayısı 0 ise kolonlar 'unknown' olarak işaretlenir.
+    """
     schema, bare_table = _split_schema_table(table_name)
     insp = inspect(engine)
     columns_meta = insp.get_columns(bare_table, schema=schema)
@@ -285,6 +313,7 @@ def classify_columns(
         distinct = _distinct_count(engine, table_name, name)
         ratio = distinct / row_count
 
+        # Birincil anahtar ya da değerlerin neredeyse tamamı farklıysa (%98 ve üstü) kolon kimlik (identifier) sayılır.
         if name in pk_columns or ratio >= _IDENTIFIER_RATIO_MIN:
             classification = "identifier"
         elif bucket == "date":
@@ -294,6 +323,7 @@ def classify_columns(
         elif bucket == "numeric":
             classification = "metric"
         else:
+            # Sayısal ya da tarih olmayan kolon: çok az tekrar varsa kategorik, değilse bilinmeyen.
             classification = "categorical" if ratio < _CATEGORICAL_RATIO_MIN else "unknown"
 
         profiles.append(ColumnProfile(name, dtype_str, distinct, ratio, classification))
@@ -303,7 +333,7 @@ def classify_columns(
 
 def profile_table(engine: Engine, table_name: str) -> TableProfile:
     """
-    Tek bir eyybo için tam profil: row_count + grain + sütun sınıflandırma.
+    Tek bir tablo için tam profil: row_count + grain + sütun sınıflandırma.
     table_name "Schema.Table" (örn. "Sales.Customer") ya da şemasız
     "Table" formatında olabilir; inspect() çağrıları için ayrıştırılır,
     SQL sorguları için (quote_identifier) tam nitelikli haliyle kullanılır.
@@ -315,11 +345,15 @@ def profile_table(engine: Engine, table_name: str) -> TableProfile:
 
     try:
         pk_constraint = insp.get_pk_constraint(bare_table, schema=schema)
+        # DİKKAT: set'e çevrildiği için bileşik PK'nin kolon sırası her çalıştırmada değişebilir.
         pk_columns = set(pk_constraint.get("constrained_columns") or [])
+    # PK okunamazsa (desteklemeyen veritabanı vb.) hata verilmez; PK olmadan devam edilir.
     except Exception:
         pk_columns = set()
 
+    # Satır sayısı için tam tarama yapılır; büyük tabloda uzun sürebilir.
     row_count = _row_count(engine, table_name)
+    # Birincil anahtar varsa grain olarak o kullanılır; yoksa tekillik testiyle aranır.
     grain = list(pk_columns) if pk_columns else detect_grain(
         engine, table_name, column_names, row_count
     )
@@ -346,14 +380,18 @@ def test_relationship(
     Kardinalite: table_b.column_b tarafında tekillik varsa many-to-one
     (A çok, B bir), yoksa many-to-many olarak işaretlenir.
     """
-    qa_t, qa_c = _q(table_a), _q(column_a)
-    qb_t, qb_c = _q(table_b), _q(column_b)
+    # Tablo ve kolon adları güvenli hale getirilir. Ham metin SQL'e doğrudan konmaz.
+    dlc = engine.dialect.name
+    qa_t, qa_c = _q(table_a, dlc), _q(column_a, dlc)
+    qb_t, qb_c = _q(table_b, dlc), _q(column_b, dlc)
 
     with engine.connect() as conn:
+        # Payda: kaynak kolonda NULL olmayan satır sayısı.
         total_non_null = conn.execute(
             text(f"SELECT COUNT(*) FROM {qa_t} WHERE {qa_c} IS NOT NULL")
         ).scalar() or 0
 
+        # Orphan (yetim) satır: A'da değeri olup B'de karşılığı olmayan satır. LEFT JOIN ile B'de NULL dönenler sayılır.
         orphan_count = conn.execute(
             text(
                 f"SELECT COUNT(*) FROM {qa_t} LEFT JOIN {qb_t} "
@@ -362,11 +400,14 @@ def test_relationship(
             )
         ).scalar() or 0
 
+    # DİKKAT: Hiç dolu satır yoksa oran 1.0 kabul edilir; yani ilişki güvensiz sayılır.
     orphan_ratio = (orphan_count / total_non_null) if total_non_null else 1.0
+    # Yetim oranı düşükse güven yüksektir (0 ile 1 arası).
     confidence = max(0.0, 1.0 - orphan_ratio)
 
     b_distinct = _distinct_count(engine, table_b, column_b)
     b_row_count = _row_count(engine, table_b)
+    # B tarafında değerler benzersizse B bir 'anahtar' gibidir: birçok A satırı tek bir B satırına bağlanır (many-to-one).
     cardinality = "many-to-one" if b_distinct == b_row_count and b_row_count > 0 else "many-to-many"
 
     return RelationshipCandidate(

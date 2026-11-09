@@ -34,9 +34,14 @@ def list_schemas(
 @router.get("/{conn_id}/tables")
 def list_tables(
     conn_id:  str,
+    # Opsiyonel şema adı (çok şemalı veritabanları için). Verilmezse varsayılan şema kullanılır.
     schema: Optional[str] = None,
     engine_meta = Depends(get_connection_engine),
 ):
+    """
+    Bağlantıdaki tablo adlarını döner. schema verilirse o şemadaki tablolar listelenir.
+    Okuma hatasında 502 döner.
+    """
     engine, _meta = engine_meta
     try:
         insp = inspect(engine)
@@ -52,9 +57,11 @@ def list_columns(
     schema: Optional[str] = None,
     engine_meta = Depends(get_connection_engine),
 ):
+    """Bir tablonun kolonlarını döner (ad, tip, boş bırakılabilir mi). Tablo yoksa 404, okuma hatasında 502 döner."""
     engine, _meta = engine_meta
     try:
         insp = inspect(engine)
+        # Tablo gerçekten var mı diye kontrol edilir; yoksa 404. Yalnız var olan tablo adları sorguya girer.
         if table_name not in insp.get_table_names(schema=schema):
             raise HTTPException(status_code=404, detail=f"Tablo bulunamadı: {table_name}")
         cols = insp.get_columns(table_name, schema=schema)
@@ -65,6 +72,7 @@ def list_columns(
                 for c in cols
             ],
         }
+    # 404 hatası olduğu gibi geçirilir; aşağıdaki genel except bunu 502'ye çevirmesin diye.
     except HTTPException:
         raise
     except Exception as e:

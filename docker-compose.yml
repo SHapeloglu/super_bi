@@ -1,0 +1,26 @@
+# SuperBI (FastAPI). Arayüz (frontend) host nginx'ten diskten sunulur (/opt/superbi/frontend), yalnız /api/ konteynere gider.
+# SQLite verisi ./data içinde (günlük yedek: scripts). Kullanıcı bağlantıları (connections tablosu) başka DB'lere host adıyla bağlanır;
+# 127.0.0.1 konteynerden çalışmaz → ortak DB'ler taşınınca host adı postgres-ortak / mysql-ortak olarak güncellenir.
+# SuperBI servisi (FastAPI). Veritabanı: uygulamanın kendi SQLite dosyası ve kullanıcı bağlantıları (başka DB'ler).
+services:
+  superbi:
+    build: .
+    image: superbi:latest
+    container_name: superbi
+    # unless-stopped: sunucu açılınca ya da uygulama çökünce otomatik kalkar; elle durdurulursa kalkmaz.
+    restart: unless-stopped
+    # .env dosyasındaki değerler ortam değişkeni olarak verilir (gizli değerler git'e yazılmaz).
+    env_file: .env
+    # Port yalnız 127.0.0.1'e bağlanır; istekler host nginx üzerinden gelir (/api/ konteynere gider).
+    ports: ["127.0.0.1:8000:8000"]
+    # ./data klasörü konteynerde /data olur. SQLite verisi burada kalır; konteyner silinse bile veri kaybolmaz. Günlük yedek bu klasörü alır.
+    volumes:
+      - ./data:/data
+    # ortak-db ağına bağlanır; ortak DB'lere bu ağ üzerinden erişilir.
+    networks: [ortak-db]
+    # Bellek üst sınırı 384 MB.
+    mem_limit: 384m
+networks:
+  ortak-db:
+    external: true
+    name: ortak-db

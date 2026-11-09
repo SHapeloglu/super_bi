@@ -1,0 +1,78 @@
+# SuperBI entegrasyon testleri için test veritabanları (PostgreSQL, MySQL, MSSQL, Oracle XE).
+#
+# Host portları prod ile çakışmasın diye 1xxxx aralığında ve yalnız 127.0.0.1'e bağlı.
+# Prod konteynerler (superbi 8000, postgres-ortak 5434, ...) bu portları kullanmaz.
+#
+# Kullanım (geliştirici makinesi):
+#   docker compose -f docker-compose.test.yml up -d --wait
+#   sh scripts/test.sh integration
+#   docker compose -f docker-compose.test.yml down -v
+#
+# UYARI: Sunucuda (7.8 GB RAM, swap dolu) bu servisleri canlı SuperBI ile aynı anda
+# çalıştırmadan önce RAM'e bakın. MSSQL ve Oracle XE birkaç GB bellek ister.
+#
+# Parolalar yalnız test içindir, gerçek sır değildir. Varsayılanlar ortam değişkeniyle
+# geçersiz kılınabilir. Entegrasyon testlerindeki URL'ler bu değerlerle eşleşmelidir.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: superbi-it-postgres
+    environment:
+      POSTGRES_USER: ${DATALENS_IT_PG_USER:-dl_test}
+      POSTGRES_PASSWORD: ${DATALENS_IT_PG_PASSWORD:-dl_test_pw}
+      POSTGRES_DB: ${DATALENS_IT_PG_DB:-dl_test}
+    ports: ["127.0.0.1:15432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mysql:
+    image: mysql:8.4
+    container_name: superbi-it-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATALENS_IT_MYSQL_ROOT_PASSWORD:-dl_test_root}
+      MYSQL_DATABASE: ${DATALENS_IT_MYSQL_DB:-dl_test}
+      MYSQL_USER: ${DATALENS_IT_MYSQL_USER:-dl_test}
+      MYSQL_PASSWORD: ${DATALENS_IT_MYSQL_PASSWORD:-dl_test_pw}
+    ports: ["127.0.0.1:13306:3306"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  mssql:
+    # SQL Server 2022 (~2 GB RAM). Test DB'si (dl_test) konteynerde otomatik oluşmaz; URL'deki
+    # veritabanını bir kez elle oluşturun: CREATE DATABASE dl_test;
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: superbi-it-mssql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${DATALENS_IT_MSSQL_SA_PASSWORD:-DlTest_Pw_2026!}
+    ports: ["127.0.0.1:11433:1433"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  oracle:
+    # Oracle XE 21 (slim). İlk açılış birkaç dakika sürer; start_period bu yüzden uzun.
+    # Uygulama kullanıcısı XEPDB1 üzerinde oluşturulur; URL: ...?service_name=XEPDB1
+    image: gvenzl/oracle-xe:21-slim
+    container_name: superbi-it-oracle
+    environment:
+      ORACLE_PASSWORD: ${DATALENS_IT_ORACLE_SYS_PASSWORD:-dl_test_sys}
+      APP_USER: ${DATALENS_IT_ORACLE_USER:-dl_test}
+      APP_USER_PASSWORD: ${DATALENS_IT_ORACLE_PASSWORD:-dl_test_pw}
+    ports: ["127.0.0.1:11521:1521"]
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 180s

@@ -42,6 +42,10 @@ router = APIRouter()
 
 @router.post("/preview", response_model=SQLPreviewResponse)
 def preview_sql(body: SQLPreviewRequest):
+    """
+    SQL önizlemesi üretir. Veritabanına bağlanmaz ve kimlik doğrulama istemez.
+    Hatalı istekte (geçersiz alan vb.) 400 döner.
+    """
     try:
         sql, _ = sql_builder.build(
             base_table=body.base_table,
@@ -84,6 +88,11 @@ def run_query(
     repo:        ConnectionRepository = Depends(get_repo),
     executor:    QueryExecutor        = Depends(get_executor),
 ):
+    """
+    Sorguyu çalıştırır (en fazla sample satır) ve sonucu cache'e yazar.
+    commit=True ise kalıcı, değilse geçici cache kullanılır. Bağlantı yetkisi yoksa 404, hatalı istekte 400 döner.
+    """
+    # Bağlantı sahiplik kontrolü ve engine bu satırda alınır. Yetki yoksa ya da engine yoksa hata fırlatılır.
     engine, meta = resolve_connection_engine(body.conn_id, current, registry, repo)
 
     try:
@@ -94,6 +103,7 @@ def run_query(
             filters=body.filters,
             group_by=body.group_by,
             order_by=body.order_by,
+            # Önizleme için istenen satır sayısı SQL LIMIT olarak verilir.
             limit=body.sample,
             offset=0,
             calculated_fields=body.calculated_fields,
@@ -121,13 +131,16 @@ def run_query(
 #    cache_key zaten user_id içeriyor — başkasının cache'ini commit edemez
 # ---------------------------------------------------------------------------
 
+# Sahiplik kontrolü QueryExecutor.commit içinde yapılır (entry.user_id != user_id ise False).
+# Başkasının kaydı için de "bulunamadı" ile aynı yanıt döner; böylece kaydın var olup olmadığı sızmaz.
 @router.post("/commit", response_model=CacheCommitResponse)
 def commit_cache(
     body:     CacheCommitRequest,
     current                    = Depends(get_current_user),
     executor: QueryExecutor    = Depends(get_executor),
 ):
-    success = executor.commit(body.cache_key)
+    """Geçici cache kaydını kalıcı hale getirir. Kayıt yoksa ya da süresi dolmuşsa success=False döner."""
+    success = executor.commit(body.cache_key, user_id=current.user_id)
     return CacheCommitResponse(
         success=success,
         cache_key=body.cache_key,
@@ -147,6 +160,10 @@ async def stream_query(
     repo:        ConnectionRepository = Depends(get_repo),
     executor:    QueryExecutor        = Depends(get_executor),
 ):
+    """
+    Büyük sonuçları NDJSON (her satırı ayrı JSON) akışı olarak döner. Cache kullanmaz.
+    Hatalı istekte 400 döner.
+    """
     engine, meta = resolve_connection_engine(body.conn_id, current, registry, repo)
     try:
         sql, params = sql_builder.build(
@@ -164,6 +181,7 @@ async def stream_query(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    # Akış cache'e yazılmaz; her satır anında istemciye gönderilir.
     return StreamingResponse(
         executor.stream_execute(engine, sql, params, sample=body.limit),
         media_type="application/x-ndjson",
@@ -202,6 +220,7 @@ def purge_expired(
     current   = Depends(get_current_user),
     executor: QueryExecutor = Depends(get_executor),
 ):
+    """Süresi dolmuş cache kayıtlarını temizler ve silinen kayıt sayısını döner."""
     count = executor.purge_expired()
     return {"purged": count}
 
@@ -211,6 +230,7 @@ def cache_stats(
     current   = Depends(get_current_user),
     executor: QueryExecutor = Depends(get_executor),
 ):
+    """Cache istatistiklerini döner. Sadece admin görebilir; diğer kullanıcılar 403 alır."""
     if current.role != "admin":
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     return executor.cache_stats()

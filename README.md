@@ -1,5 +1,7 @@
 # SuperBI
 
+> **Durum notu (2026-10-25 denetimi):** Canlı kurulum **Docker**'dır (`docker-compose.yml`, konteyner `superbi`, `127.0.0.1:8000`, `./data → /data`; AutoSleep ile uyur). systemd birimi pasiftir. Kodda README'de anlatılmayan parçalar vardır: `/api/analyze` (`app/api/analyze.py`), `granularity_analyzer.py`, `app/services/nlq/` (henüz hiçbir yerde içe aktarılmıyor) ve `DATALENS_JWT_EXPIRE_MINUTES` ortam değişkeni.
+
 Self-hosted, full-stack **Business Intelligence** platformu — Power BI / Qlik Sense'e açık kaynak, kendi sunucunuzda barındırılan bir alternatif.
 
 Verileriniz hiçbir zaman sizin altyapınızdan çıkmaz. Oracle, MSSQL, MySQL ve PostgreSQL kaynaklarınıza doğrudan bağlanır, DAX'a benzer bir ifade diliyle (**SBX**) hesaplanmış alanlar/metrikler tanımlamanızı sağlar ve sonucu ECharts ile görselleştirir.
@@ -24,6 +26,7 @@ Kurumsal BI araçları iki uçta kutuplaşmış durumda:
 - 🔗 **Görsel sorgu oluşturucu** — tablo/kolon seçimi, JOIN, filtre, gruplama, sıralama; SQL yazmadan sorgu kurma
 - 📊 **Dashboard ve görselleştirme** — Apache ECharts tabanlı grafikler
 - 📜 **Sorgu geçmişi ve önbellek** — çalıştırılan sorgular gruplanır, istatistikleri tutulur, sonuç önbellekleme desteklenir
+- 🔎 **Tablo granularity ve ilişki keşfi** (`/api/analyze`) — grain tespiti, sütun sınıflandırma, PK/FK ilişkileri ve orphan testiyle istatistiksel ilişki çıkarımı (`granularity_analyzer.py`). Doğal dil sorgu katmanı (`app/services/nlq/`) kodu var ama henüz hiçbir yerde içe aktarılmıyor.
 - 🌐 **Dialect-agnostic SQL üretimi** — `sqlglot` ile tek bir sorgu tanımı, hedef veritabanına göre doğru SQL'e derlenir (Oracle'da `FETCH FIRST`, MSSQL'de `TOP`/`OFFSET-FETCH` vb.)
 
 ## Mimari
@@ -59,7 +62,7 @@ Kurumsal BI araçları iki uçta kutuplaşmış durumda:
    └───────┘  └───────┘  └───────┘  └───────┘
 ```
 
-Detaylı mimari notları için [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dosyasına bakın.
+Detaylı mimari notları için [`architect.md`](architect.md) dosyasına bakın.
 
 ## SBX — SuperBI Expression Language
 
@@ -162,22 +165,24 @@ MSSQL bağlantı dizesi ODBC Driver 18 gerektirir:
 ```
 super_bi/
 ├── app/
-│   ├── api/              # REST endpoint'leri (auth, connections, datasets, dashboard, query, schema, drivers, history)
+│   ├── api/              # REST endpoint'leri (auth, connections, datasets, dashboard, query, schema, drivers, history, analyze)
 │   ├── auth/              # JWT kimlik doğrulama
 │   ├── core/              # connector_registry, crypto, repository
 │   ├── db/                # SQLite metadata store
 │   ├── models/            # Pydantic şemaları
-│   ├── services/          # sql_builder, expression_builder, sbx_compiler, query_executor
+│   ├── services/          # sql_builder, expression_builder, sbx_compiler, query_executor, granularity_analyzer
+│   │   └── nlq/           # Doğal dil sorgu (Top-N planı); henüz içe aktarılmıyor
 │   └── main.py            # FastAPI giriş noktası
 ├── frontend/               # Vanilla HTML/CSS/JS + ECharts
 ├── scripts/                # Yedekleme betikleri
-├── docs/                   # Mimari kararlar, session özetleri, backlog
+├── docs/                   # Ek belgeler (OKUBENI_*.md)
+├── architect.md / task.md / backlog.md / session.md / CLAUDE.md   # Çalışma md'leri
 └── requirements.txt
 ```
 
 ## Yol Haritası
 
-Güncel durum için [`docs/TASKS.md`](docs/TASKS.md) ve [`docs/BACKLOG.md`](docs/BACKLOG.md) dosyalarına bakın. Öne çıkanlar:
+Güncel durum için [`task.md`](task.md) ve [`backlog.md`](backlog.md) dosyalarına bakın. Öne çıkanlar:
 
 - [ ] **DuckDB tabanlı in-memory ilişkisel model katmanı** — farklı kaynaklardan (örn. Oracle + MySQL) gelen veri setlerini tek bir motor üzerinde ilişkilendirme
 - [ ] Incremental (delta) veri yenileme

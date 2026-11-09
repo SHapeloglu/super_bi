@@ -16,6 +16,7 @@ def list_drivers(
     current  = Depends(get_current_user),
     registry: ConnectorRegistry = Depends(get_registry),
 ):
+    """Desteklenen veritabanı sürücülerinin ve kurulu olup olmadıklarının listesini döner. Herkes görebilir."""
     return registry.list_drivers()
 
 
@@ -25,6 +26,8 @@ def install_driver(
     current  = Depends(get_current_user),
     registry: ConnectorRegistry = Depends(get_registry),
 ):
+    # Sürücü kurmak sunucuya paket yüklemek demektir; bu yüzden sadece admin yapabilir.
+    """Eksik bir veritabanı sürücüsünü pip ile kurar. Sadece admin çalıştırabilir; kurulum başarısızsa 400 döner."""
     if current.role != "admin":
         raise HTTPException(status_code=403, detail="Driver kurulumu için admin yetkisi gerekli")
 

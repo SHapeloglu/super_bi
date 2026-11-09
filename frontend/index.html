@@ -1,16 +1,22 @@
 <!doctype html>
+<!-- SuperBI arayüzünün giriş sayfası. Tek sayfalık uygulamadır (SPA): giriş, bağlantılar, sorgu, geçmiş, dashboard ve sürücü ekranlarının hepsi bu sayfada yaşar. -->
+<!-- Bu dosya yalnız iskelettir; ekranları app.js gösterir veya gizler, API çağrılarını api.js yapar. Sunucu tarafında ayrı bir şablon motoru yoktur. -->
+<!-- Sayfa açılınca giriş ekranı görünür; giriş yapınca ana kabuk (app-shell) açılır. -->
 <html lang="tr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SuperBI</title>
   <link rel="stylesheet" href="style.css" />
+  <!-- ECharts grafik kütüphanesi (CDN). Dashboard grafiklerini app.js çizer; kütüphane yüklenmezse grafik alanları boş kalır. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/6.0.0/echarts.min.js"></script>
 </head>
 <body>
+  <!-- Bildirim (toast) mesajlarının çıkacağı boş alan. app.js buraya mesaj ekler; bu öğe yoksa hata verir. -->
   <div id="toast-root"></div>
 
   <!-- Giriş / Kayıt ekranı -->
+  <!-- Giriş ekranı. Ana kabuk gizliyken bu ekran görünür. Kullanıcı adı ve şifre en az 3 ve 8 karakter olmalıdır (minlength). -->
   <div id="auth-screen" class="auth-screen">
     <div class="auth-card">
       <h1>SuperBI</h1>
@@ -21,6 +27,7 @@
         <button id="tab-register" class="tab">Kayıt Ol</button>
       </div>
 
+      <!-- Giriş / kayıt formu. 'Kayıt Ol' sekmesine geçilince app.js düğme metnini ve ipucu yazısını değiştirir. Submit olayı app.js içinde yakalanır; sayfa yenilenmez. -->
       <form id="auth-form">
         <label>Kullanıcı adı</label>
         <input id="auth-username" type="text" autocomplete="username" required minlength="3" />
@@ -38,6 +45,7 @@
   </div>
 
   <!-- Ana uygulama -->
+  <!-- Ana uygulama kabuğu. Giriş yapılınca görünür. Üst çubukta menü düğmeleri (data-view), kullanıcı adı, tema ve çıkış düğmeleri bulunur. -->
   <div id="app-shell" class="app-shell" style="display:none">
     <header class="topbar">
       <div class="brand">SuperBI</div>
@@ -55,9 +63,14 @@
       </div>
     </header>
 
+    <!-- Ekran alanı. Seçilen menüye göre ilgili ekranın içeriği JavaScript ile bu öğenin içine yazılır. -->
     <main id="view-root" class="view-root"></main>
   </div>
 
+  <!-- app.js ES module olarak yüklenir. 'module' olduğu için sayfa tamamen okunduktan sonra çalışır; bu yüzden yukarıdaki öğeleri güvenle bulabilir. -->
+  <!-- CSV yardımcıları (saf fonksiyonlar). app.js'ten önce klasik script olarak yüklenir; window.SuperBICsv'yi tanımlar. -->
+  <script src="csv_escape.js"></script>
+  <script src="role_gating.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
