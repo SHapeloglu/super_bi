@@ -31,6 +31,9 @@ DIALECT_MAP = {
     "mysql":      "mysql",
     "mssql":      "tsql",
     "oracle":     "oracle",
+    # sqlglot 25.34.1 'doris' lehçesini içerir (MySQL'den türetilmiş). Doris'e özgü
+    # fonksiyon/sözdizimi farkları için "mysql" yerine bu kullanılır.
+    "doris":      "doris",
 }
 
 # Formül uzunluk sınırı: 500 karakter. Çok uzun formüller hem güvenlik hem performans için reddedilir.
