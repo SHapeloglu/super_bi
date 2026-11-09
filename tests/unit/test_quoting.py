@@ -69,7 +69,7 @@ def test_mysql_join_where_order_group_backtick():
     )
     assert '"' not in sql, sql
     assert "`musteri`" in sql and "`mid`" in sql and "`tutar`" in sql, sql
-    assert "GROUP BY `id`" in sql and "ORDER BY `id` DESC" in sql, sql
+    assert "GROUP BY `orders`.`id`" in sql and "ORDER BY `orders`.`id` DESC" in sql, sql
 
 
 def test_enjeksiyon_mysql_de_reddedilir():
