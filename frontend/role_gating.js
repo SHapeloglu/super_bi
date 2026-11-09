@@ -21,12 +21,11 @@
    * 'Üzerine yaz' hedefi olabilecek veri setlerini süzer.
    * Admin: hepsi. Diğerleri: permission === "write" olanlar ya da sahibi oldukları. permission === "read" olanlar listede gelmez.
    */
+  // Kaydetmede isim eşleşmesi yalnız kullanıcının KENDİ veri setleriyle yapılır (admin dahil).
+  // Başkasının (paylaşılmış) veri seti isimle sessizce üzerine yazılmaz; yeni kayıt oluşturulur.
   function writableDatasets(datasets, role, userId) {
-    if (!Array.isArray(datasets)) return [];
-    if (role === "admin") return datasets.slice();
-    return datasets.filter(
-      (d) => d && (d.permission === "write" || (userId != null && d.owner_id === userId))
-    );
+    if (!Array.isArray(datasets) || userId == null) return [];
+    return datasets.filter((d) => d && d.owner_id === userId);
   }
 
   return { shouldShowConnectionForm, writableDatasets };

@@ -24,20 +24,18 @@ const list = [
   { dataset_id: 4, name: "sahibim_ama_read", owner_id: "u1", permission: "read" },
 ];
 
-// Viewer: sahip olunan + write izni olanlar; read olanlar hariç
-check("viewer yazılabilirleri",
+// İsim eşleşmesi yalnız sahip olunan veri setleriyle (write paylaşımı dahil değil)
+check("sahip olunanlar (read olan kendi dahil)",
   writableDatasets(list, "viewer", "u1").map((d) => d.dataset_id),
-  [1, 3, 4]);
-check("viewer sahibi olmadığı read veri setini görmez",
-  writableDatasets([list[1]], "viewer", "u1"), []);
-check("sahip olmayan viewer, yalnız write izinli olanları görür (read olanlar hariç)",
-  writableDatasets(list, "viewer", "u9").map((d) => d.dataset_id),
-  [1, 3]);
-
-// Admin: değişmez, hepsi
-check("admin hepsini görür",
+  [1, 4]);
+check("paylaşılan write veri seti eşleşmeye girmez",
+  writableDatasets([list[2]], "viewer", "u1"), []);
+check("sahip olmayan kullanıcı hiçbir şeyi eşleştirmez",
+  writableDatasets(list, "viewer", "u9"), []);
+check("admin da yalnız kendi veri setlerini eşleştirir (başkasınınkini ezmez)",
   writableDatasets(list, "admin", "u1").map((d) => d.dataset_id),
-  [1, 2, 3, 4]);
+  [1, 4]);
+check("userId yoksa boş", writableDatasets(list, "admin", undefined), []);
 
 // Girdi koruması
 check("liste yoksa boş", writableDatasets(null, "viewer", "u1"), []);
