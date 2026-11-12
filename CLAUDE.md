@@ -14,7 +14,7 @@ SuperBI: self-hosted BI platformu (Power BI / Qlik Sense alternatifi). FastAPI +
 
 ## Konum
 
-- **Çalışma kopyası (tek kaynak):** `/opt/superbi` — git deposu. Canlı kod `release/2026-11-09` (`127c74d`, 2026-11-09). GitHub `main` eski; release PR bekliyor. Özellik dalları `/opt/superbi-wt/<ad>` worktree'lerinde.
+- **Çalışma kopyası (tek kaynak):** `/opt/superbi` — git deposu. Canlı kod `release/2026-11-09` ile birebir; güncel commit için `git log -1`. `main` bu release'i içerir (PR ile birleştirilir). Özellik dalları `/opt/superbi-wt/<ad>` worktree'lerinde; iş bitince temizlenir.
 - `/root/superbi/` — yalnız `backend/sbx/` içeriyor (eski/ayrı kopya; `compiler.py` `/opt/superbi/app/services/sbx_compiler.py` ile aynı değil). Canlı kaynak sayılmaz; değiştirilmeden bırakılır.
 - Canlı alan adı: `superbi.bidanismanlik.com.tr` (host nginx: `/` → `frontend/`, `/api/` → `127.0.0.1:8000`).
 
@@ -26,7 +26,7 @@ docker logs --tail 100 superbi
 docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 ```
 
-- AutoSleep (`/opt/autosleep/ek_projeler.py`, 2026-10-18'den beri Docker'da) boşta kalan konteyneri durdurabilir; bu bilinçli davranıştır, hata değildir. Konteyner 2026-11-09 release'inden beri çalışıyor.
+- AutoSleep (`/opt/autosleep/ek_projeler.py`, 2026-10-18'den beri Docker'da) boşta kalan konteyneri durdurabilir; bu bilinçli davranıştır, hata değildir. Konteyner boştaysa `Exited` görünür; ilk istekte uyanır.
 - Veri: `/opt/superbi/data/superbi.db` (konteynerde `/data`). Günlük yedek: `scripts/backup.sh` → `/opt/superbi/backups/`.
 - Eski kayıt (2026-09-16): servis systemd idi; Docker'a geçildi.
 
@@ -103,4 +103,4 @@ docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 
 ---
 
-Son güncelleme: 2026-11-09 (release `127c74d` durumu, yetki/RLS, deploy kuralı).
+Son güncelleme: 2026-11-12 (editor rolü kaldırıldı, LICENSE eklendi, eski bağlantılar temizlendi, md düzeltmesi).
