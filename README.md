@@ -28,6 +28,9 @@ Kurumsal BI araçları iki uçta kutuplaşmış durumda:
 - 📜 **Sorgu geçmişi ve önbellek** — çalıştırılan sorgular gruplanır, istatistikleri tutulur, sonuç önbellekleme desteklenir
 - 🔎 **Tablo granularity ve ilişki keşfi** (`/api/analyze`) — grain tespiti, sütun sınıflandırma, PK/FK ilişkileri ve orphan testiyle istatistiksel ilişki çıkarımı (`granularity_analyzer.py`). Doğal dil sorgu katmanı (`app/services/nlq/`) kodu var ama henüz hiçbir yerde içe aktarılmıyor.
 - 🌐 **Dialect-agnostic SQL üretimi** — `sqlglot` ile tek bir sorgu tanımı, hedef veritabanına göre doğru SQL'e derlenir (Oracle'da `FETCH FIRST`, MSSQL'de `TOP`/`OFFSET-FETCH` vb.)
+- 👥 **Roller ve paylaşım** — `admin` ve `viewer` rolleri; dataset ve dashboard'lar kullanıcıya ya da role `read` / `write` izniyle paylaşılır (rol paylaşımı yalnız okuma)
+- 🧱 **Satır bazlı güvenlik (RLS)** — veri setine kolon/operatör/değer veya kullanıcı özniteliğine bağlı kurallar; admin atlar, öznitelik eksikse erişim reddedilir
+- 🧪 **Apache Doris (deneysel)** — MySQL protokolü üzerinden (port 9030); canlı Doris ile doğrulanmadı
 
 ## Mimari
 
@@ -116,7 +119,9 @@ export DATALENS_DB_ENCRYPTION_KEY=$(python3 -c "from cryptography.fernet import 
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-### Production (systemd + Nginx)
+### Production (Docker Compose + Nginx)
+
+Canlı kurulum Docker Compose ile çalışır: `docker compose up -d --build` (konteyner `superbi`, `127.0.0.1:8000`). Aşağıdaki systemd birimi eski kurulumdan kalmadır; referans olarak tutulmuştur.
 
 ```ini
 # /etc/systemd/system/superbi.service
@@ -195,6 +200,11 @@ Güncel durum için [`task.md`](task.md) ve [`backlog.md`](backlog.md) dosyalar�
 - Bağlantı parolaları Fernet ile şifrelenip saklanır (bkz. [`docs/OKUBENI_ENCRYPTION.md`](docs/OKUBENI_ENCRYPTION.md))
 - Hesaplanmış alan formülleri whitelist tabanlı AST doğrulamasından geçer, `sqlglot` sürümü kasıtlı olarak sabitlenmiştir (bkz. [`docs/OKUBENI_FIX.md`](docs/OKUBENI_FIX.md))
 - `sqlglot` sürümünü yükseltmeden önce `expression_builder.py`'nin güvenlik testlerini mutlaka yeniden çalıştırın
+- Roller: `admin` (tam yetki) ve `viewer`; bağlantı oluşturma ve silme yalnız admin
+- Açık kayıt kapalıdır; yeni kullanıcıyı admin `POST /api/users` ile ekler (`DATALENS_ALLOW_REGISTER=true` ile açılabilir)
+- SQLite bağlantıları yalnız `DATALENS_SQLITE_ROOT` altında ve salt okunur açılır; uygulama metadata DB'si bağlantı olarak kullanılamaz
+- Veritabanı host'ları `DATALENS_ALLOWED_DB_HOSTS` ile sınırlandırılabilir; tanımsızsa loopback ve link-local adresler (ör. `169.254.169.254`) engellenir
+- Zorunlu ortam değişkenleri: `DATALENS_JWT_SECRET`, `DATALENS_DB_ENCRYPTION_KEY`, `DATALENS_DB` (tanımsızsa uygulama başlamaz)
 
 ## Teknoloji Yığını
 
@@ -216,4 +226,4 @@ Bu proje aktif geliştirme aşamasındadır. Issue ve PR'lar memnuniyetle karş�
 
 ## Lisans
 
-*(Lisans belirtilmemiş — eklemek isterseniz LICENSE dosyası oluşturun.)*
+Apache License 2.0 — ayrıntılar için [`LICENSE`](LICENSE) dosyasına bakın.
