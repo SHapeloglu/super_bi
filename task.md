@@ -93,3 +93,4 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 
 - Yedek ve deploy ayrıntıları: `session.md`.
 - Planlanmamış fikirler ve teknik borç: `backlog.md`.
+- [ ] **EN SON — Eski iki bağlantı ve bağlı veri setlerinin silinmesi:** Bağlantılar `e03988d1` (Oracle, XEPDB1) ve `894d2704` (MSSQL, AdventureWorks2022) — ikisi de `127.0.0.1` host'lu ve çalışmıyor; bağlı veri setleri `ds_employees` (`ffc31fa6`) ve `ds_SalesOrderDetail` (`e076fd42`). Ön koşullar: (1) veri sahiplerine bilgi verilmesi, (2) silme öncesi yedek (`legacy-cleanup-*` örneğindeki gibi), (3) Oracle/MSSQL için kaynak kararı (silmek mi, yeniden kurmak mı). Silme, bu üç koşul sağlanmadan yapılmaz.
