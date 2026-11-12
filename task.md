@@ -5,11 +5,11 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 ## 🔜 Sıradaki
 
 ### Güvenlik ve yetki (2026-11-09 açık kalanlar)
-- [ ] Frontend `schema_name` ve `calculated_fields` göndermiyor: "Dataset Olarak Kaydet" payload'ı (`app.js` ~1186, `buildQueryShape` alanları eksik). Backend hazır (`datasets.py`, `71d11cf`).
+- [x] Frontend `schema_name` ve `calculated_fields` gönderiyor (`dataset_payload.js`, 2026-11-09).
 - [ ] Tarayıcıda paylaşılan veri seti widget testi tamamlanmadı (alıcı rolü, 404, kolon alt kümesi, RLS).
-- [ ] Viewer UI: bağlantı oluştur/sil düğmeleri ve açık kayıt formu gizlenmeli (sunucu 403 döner; yalnız arayüz).
-- [ ] Canlı `.env` içinde `DATALENS_ALLOWED_DB_HOSTS` tanımlı (değer doğrulanmadı); eski `127.0.0.1` kayıtları (mssql, mysql, oracle, postgresql) ve host boş kayıt temizlenmeli.
-- [ ] `release/2026-11-09` (`127c74d`) `main`'e PR ile alınmalı; GitHub `main` eski.
+- [x] Viewer UI: bağlantı formu ve yetkisiz düğmeler gizlendi (`role_gating.js`, 2026-11-09).
+- [ ] Eski bağlantılar: 10 kullanılmayan bağlantı silindi (2026-11-12, yedek `legacy-cleanup-20261112-1043`). Veri setine bağlı 2 kaldı (Oracle `e03988d1`, MSSQL `894d2704`); karar bekliyor (sil ya da yeniden bağla). `DATALENS_ALLOWED_DB_HOSTS` konteynerde tanımlı.
+- [x] Release `main`'e PR ile alındı (PR #1–#6).
 
 ### Test ve canlı doğrulama
 - [ ] Integration testleri çalıştırılmadı: `docker compose -f docker-compose.test.yml up -d --wait` + `make test` (env yoksa testler ATLANIR).
@@ -19,7 +19,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 - [ ] README.md güncellemesi: NLQ motoru, analyze API, granularity, paylaşım/RLS, Doris ve test altyapısı README'de yok.
 
 ### Çalışma düzeni
-- [ ] `/opt/superbi` çalışma ağacında commit'lenmemiş dosyalar ve kök dizindeki `apply_*.py` / `patch_*.py` yama betikleri (`scripts/archive/` altına taşınmış görünüyor; kök kalıntıları doğrulanmalı).
+- [x] `/opt/superbi` çalışma ağacı temiz; yama betikleri `scripts/archive/` altında.
 - [ ] `/root/superbi/backend/sbx/` ayrı ve eski kopya. Silme/arşiv kararı gerekli.
 - [ ] Kök dizinde 0 baytlık `superbi.db`, `pbixdb`, `odoo_test` — veri yolu karışıklığı riski (gerçek DB `data/superbi.db`).
 
