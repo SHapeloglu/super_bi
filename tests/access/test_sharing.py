@@ -258,3 +258,19 @@ if __name__ == "__main__":
             basarisiz += 1
     print(f"\n{basarili} geçti, {basarisiz} başarısız")
     sys.exit(1 if basarisiz else 0)
+
+
+def test_editor_rolu_kaldirildi():
+    """editor artık geçerli bir rol değil: kullanıcı oluşturma ve rol paylaşımında reddedilir."""
+    from app.api import users as users_api
+    from pydantic import ValidationError
+    for kurulum in (
+        lambda: users_api.UserCreate(username="ali_edt", password="guclu-sifre-1", role="editor"),
+        lambda: shares_api.ShareIn(resource_type="dataset", resource_id="d1", grantee_type="role",
+                                   grantee_id="editor", permission="read"),
+    ):
+        try:
+            kurulum()
+        except ValidationError:
+            continue
+        raise AssertionError("editor rolü kabul edildi")

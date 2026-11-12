@@ -16,7 +16,7 @@ from typing import Optional
 
 RESOURCE_TYPES = ("dataset", "dashboard")
 GRANTEE_TYPES = ("user", "role")
-ROLES = ("admin", "editor", "viewer")
+ROLES = ("admin", "viewer")  # editor rolü kaldırıldı: anlamlı yetki farkı yoktu
 PERMISSIONS = ("read", "write")
 
 _RANK = {None: 0, "read": 1, "write": 2}
