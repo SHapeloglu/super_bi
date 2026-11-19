@@ -76,3 +76,10 @@ services:
       timeout: 10s
       retries: 60
       start_period: 180s
+
+  doris:
+    # Apache Doris 4.x all-in-one (FE + BE tek konteynerde). Bellek ihtiyacı yüksek; yalnız CI'da elle
+    # tetiklenen iş kullanır (integration-doris). Sunucuda çalıştırılmaz.
+    image: apache/doris:all-in-one-4.1.5
+    container_name: superbi-it-doris
+    ports: ["127.0.0.1:19030:9030"]
