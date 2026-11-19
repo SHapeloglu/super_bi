@@ -7,6 +7,7 @@
 import { createApiClient } from "./api.js";
 // CSV yardımcıları csv_escape.js (klasik script, index.html'de app.js'ten önce yüklenir) içinden gelir.
 const { rowsToCsv } = window.SuperBICsv;
+const SuperBIHistory = window.SuperBIHistory;
 
 /* ============================================================
  * Ayarlar + global state
@@ -1499,12 +1500,10 @@ function pushHistory() {
   const dash = state.currentDashboard;
   if (!dash) return;
   const snapshot = JSON.stringify(dash.objects);
-  // İndeksin ötesindeki geçmişi sil (redo branch temizleme)
-  state.dashHistory = state.dashHistory.slice(0, state.dashHistoryIndex + 1);
-  state.dashHistory.push(snapshot);
-  // Bellek tasarrufu: en fazla 50 adım sakla
-  if (state.dashHistory.length > 50) state.dashHistory.shift();
-  state.dashHistoryIndex = state.dashHistory.length - 1;
+  // Geçmiş mantığı history.js'te (ileri dal temizleme, 50 adım sınırı).
+  const next = SuperBIHistory.push(state.dashHistory, state.dashHistoryIndex, snapshot);
+  state.dashHistory = next.history;
+  state.dashHistoryIndex = next.index;
   updateUndoRedoButtons();
 }
 
@@ -1512,8 +1511,8 @@ function pushHistory() {
  * Bir adım geri alır (Ctrl+Z). Geçmişte önceki bir görüntü varsa imleci bir geri alır ve onu uygular. En eski kayıtta hiçbir şey yapmaz.
  */
 function undoDashboard() {
-  if (state.dashHistoryIndex <= 0) return;
-  state.dashHistoryIndex--;
+  if (!SuperBIHistory.canUndo(state.dashHistoryIndex)) return;
+  state.dashHistoryIndex = SuperBIHistory.undo(state.dashHistory, state.dashHistoryIndex);
   _applyHistorySnapshot();
 }
 
@@ -1521,8 +1520,8 @@ function undoDashboard() {
  * Bir adım ileri alır (Ctrl+Y). Geri alınmış bir adım varsa onu yeniden uygular. En son kayıtta hiçbir şey yapmaz.
  */
 function redoDashboard() {
-  if (state.dashHistoryIndex >= state.dashHistory.length - 1) return;
-  state.dashHistoryIndex++;
+  if (!SuperBIHistory.canRedo(state.dashHistory, state.dashHistoryIndex)) return;
+  state.dashHistoryIndex = SuperBIHistory.redo(state.dashHistory, state.dashHistoryIndex);
   _applyHistorySnapshot();
 }
 
@@ -1532,7 +1531,7 @@ function redoDashboard() {
 function _applyHistorySnapshot() {
   const dash = state.currentDashboard;
   if (!dash) return;
-  const snapshot = state.dashHistory[state.dashHistoryIndex];
+  const snapshot = SuperBIHistory.snapshotAt(state.dashHistory, state.dashHistoryIndex);
   if (snapshot === undefined) return;
   dash.objects = JSON.parse(snapshot);
   const canvasPage = qs("#dash-canvas-page");
@@ -1546,8 +1545,8 @@ function _applyHistorySnapshot() {
 function updateUndoRedoButtons() {
   const undoBtn = qs("#dash-undo-btn");
   const redoBtn = qs("#dash-redo-btn");
-  if (undoBtn) undoBtn.disabled = state.dashHistoryIndex <= 0;
-  if (redoBtn) redoBtn.disabled = state.dashHistoryIndex >= state.dashHistory.length - 1;
+  if (undoBtn) undoBtn.disabled = !SuperBIHistory.canUndo(state.dashHistoryIndex);
+  if (redoBtn) redoBtn.disabled = !SuperBIHistory.canRedo(state.dashHistory, state.dashHistoryIndex);
 }
 
 /* ---- Dashboard listesi ve editör ---- */
@@ -1676,13 +1675,13 @@ function renderDashboardEditor(root) {
     class: "btn btn-sm",
     id: "dash-undo-btn",
     title: "Geri Al (Ctrl+Z)",
-    disabled: state.dashHistoryIndex <= 0 ? "disabled" : null,
+    disabled: SuperBIHistory.canUndo(state.dashHistoryIndex) ? null : "disabled",
   }, "↩ Geri Al");
   const redoBtn = el("button", {
     class: "btn btn-sm",
     id: "dash-redo-btn",
     title: "İleri Al (Ctrl+Y)",
-    disabled: state.dashHistoryIndex >= state.dashHistory.length - 1 ? "disabled" : null,
+    disabled: SuperBIHistory.canRedo(state.dashHistory, state.dashHistoryIndex) ? null : "disabled",
   }, "↪ İleri Al");
   undoBtn.addEventListener("click", () => undoDashboard());
   redoBtn.addEventListener("click", () => redoDashboard());
