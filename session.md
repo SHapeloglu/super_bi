@@ -149,3 +149,9 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - Etki: Kendinden imzalı sertifika kullanan MSSQL bağlantıları `DATALENS_MSSQL_TRUST_CERT=yes` olmadan bağlanamaz. Canlıda MSSQL bağlantısı (`894d2704`) zaten bağlı veri seti var; deploy öncesi bu bağlantının sertifika durumu kontrol edilmeli.
 - Not: `oracledb` requirements'ta yok (sunucuda kurulu); yerel test ortamında elle kurulmalı, `test_url_escape.py` Oracle testi için gerekir.
 - Allowlist: canlı `.env`'de `DATALENS_ALLOWED_DB_HOSTS` tanımlı (değer: `postgres-ortak,mysql-ortak`); bu madde kapandı.
+
+## 2026-11-19 — CI entegrasyon testleri
+- `ci.yml` üç işe ayrıldı: `unit-security` (her push/PR), `integration-core` (PostgreSQL + MySQL, her push/PR), `integration-heavy` (MSSQL + Oracle, yalnız `workflow_dispatch`; birkaç GB RAM ve uzun açılış nedeniyle).
+- Kırmızı bulgu: CI'daki güvenlik işi `oracledb` olmadan `test_url_escape.py` Oracle testinde başarısız oluyordu. Çözüm: `requirements-test.txt` (`-r requirements.txt` + psycopg2-binary, PyMySQL, oracledb); iki iş de bunu kurar.
+- Yerel doğrulama (CI'yı birebir taklit, yalnız PG+MySQL konteynerleri): güvenlik paketi geçti; PostgreSQL 7/7, MySQL 8/8; MSSQL/Oracle env'i yoksa ATLANDI.
+- Doğrulanmadı: `integration-heavy` (MSSQL ve Oracle XE yerelde RAM nedeniyle çalıştırılmadı). İlk elle tetiklemede görülecek.

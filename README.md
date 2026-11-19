@@ -102,6 +102,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Testleri çalıştırmak için ek sürücüler: `pip install -r requirements-test.txt` (`make test`, `scripts/test.sh`). Entegrasyon testleri için `docker compose -f docker-compose.test.yml up -d --wait postgres mysql` ile PostgreSQL ve MySQL'i başlatın.
+
 Gerekli ortam değişkenlerini ayarlayın (örnek `systemd` servis dosyası aşağıda):
 
 ```bash

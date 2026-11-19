@@ -1,0 +1,6 @@
+# Test bağımlılıkları (üretim bağımlılığı değil). Güvenlik ve entegrasyon testleri için.
+# Ana bağımlılıklar requirements.txt'te; sürücüler burada ek olarak kurulur.
+-r requirements.txt
+psycopg2-binary
+PyMySQL>=1.1
+oracledb
