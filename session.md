@@ -155,3 +155,10 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - Kırmızı bulgu: CI'daki güvenlik işi `oracledb` olmadan `test_url_escape.py` Oracle testinde başarısız oluyordu. Çözüm: `requirements-test.txt` (`-r requirements.txt` + psycopg2-binary, PyMySQL, oracledb); iki iş de bunu kurar.
 - Yerel doğrulama (CI'yı birebir taklit, yalnız PG+MySQL konteynerleri): güvenlik paketi geçti; PostgreSQL 7/7, MySQL 8/8; MSSQL/Oracle env'i yoksa ATLANDI.
 - Doğrulanmadı: `integration-heavy` (MSSQL ve Oracle XE yerelde RAM nedeniyle çalıştırılmadı). İlk elle tetiklemede görülecek.
+
+## 2026-11-19 — Öneriler uygulandı
+- Geri al/yinele mantığı `frontend/history.js` (PR #13); birim testi 11/11. Uçtan uca tarayıcı testi (Playwright, yerel): 17/17 (düğmeler, Ctrl+Z/Ctrl+Y, ileri dal temizleme, JS hatası yok). Betik repo dışında.
+- Viewer bağlantı paylaşımı tasarım notu `docs/VIEWER_BAGLANTI_PAYLASIMI.md` (PR #14); kod yazılmadı, açık sorular bekliyor.
+- Eski iki bağlantı ve bağlı iki veri seti silindi (yedek `/root/yedekler/legacy2-20261119-1628`). Silme uygulamanın repository sınıflarıyla yapıldı; şema değişikliği yok. Canlı DB: 0 veri seti, 0 bağlantı, 2 kullanıcı, 0 paylaşım, 0 kural.
+- Konteyner AutoSleep ile uykuda (`Exited`); ilk istekte uyanır, deploy yapılmadı.
+- Doris: sunucuda RAM yetersiz (≈3,8 GB boş); CI'da elle tetiklenen iş için onay bekliyor.
