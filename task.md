@@ -13,7 +13,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 
 ### Test ve canlı doğrulama
 - [x] CI (2026-11-19): `ci.yml` üç işe ayrıldı: `unit-security` (her push/PR; `requirements-test.txt`), `integration-core` (PostgreSQL + MySQL; her push/PR), `integration-heavy` (MSSQL + Oracle; yalnız elle tetiklenir). Yerelde unit-security ve integration-core birebir denendi (PG 7/7, MySQL 8/8, güvenlik paketi geçti). integration-heavy yerelde denenmedi (RAM); ilk GitHub Actions çalıştırmasında doğrulanacak.
-- [ ] `make test` (MSSQL/Oracle dahil) henüz tam çalıştırılmadı; integration-heavy job'ı ilk elle tetiklemede doğrulanacak.
+- [x] MSSQL ve Oracle entegrasyon testleri GitHub Actions'ta geçti (2026-11-19, `integration-heavy`, `workflow_dispatch`, `fix/ci-heavy-gpg`, run 44518776450). İlk denemede ODBC deposu gpg adımı etkileşimli onay istediği için düştü; `--batch --yes` ile düzeltildi.
 - [ ] Oracle canlı doğrulama yok (identifier kuralı tek merkezden büyük harf; küçük/karma harfli tırnaklı adlar desteklenmez).
 - [ ] Doris canlı doğrulama yok (sürücü pymysql, port 9030, dialect doris).
 - [ ] Undo/redo uçtan uca testi (`app.js`) tamamlanmadı.
