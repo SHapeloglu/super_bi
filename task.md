@@ -8,7 +8,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 - [x] Frontend `schema_name` ve `calculated_fields` gönderiyor (`dataset_payload.js`, 2026-11-09).
 - [ ] Tarayıcıda paylaşılan veri seti widget testi tamamlanmadı (alıcı rolü, 404, kolon alt kümesi, RLS).
 - [x] Viewer UI: bağlantı formu ve yetkisiz düğmeler gizlendi (`role_gating.js`, 2026-11-09).
-- [ ] Eski bağlantılar: 10 kullanılmayan bağlantı silindi (2026-11-12, yedek `legacy-cleanup-20261112-1043`). Veri setine bağlı 2 kaldı (Oracle `e03988d1`, MSSQL `894d2704`); karar bekliyor (sil ya da yeniden bağla). `DATALENS_ALLOWED_DB_HOSTS` konteynerde tanımlı.
+- [x] Eski bağlantılar (2026-11-19): kalan 2 bağlantı (Oracle `e03988d1`, MSSQL `894d2704`) ve bağlı 2 veri seti (`ffc31fa6`, `e076fd42`; sahip viewer hesabı) silindi; yedek `/root/yedekler/legacy2-20261119-1628`. Silme uygulamanın repository sınıflarıyla yapıldı (paylaşım ve RLS kayıtları dahil). Canlı DB: 0 veri seti, 0 bağlantı, 2 kullanıcı. `DATALENS_ALLOWED_DB_HOSTS` konteynerde tanımlı.
 - [x] Release `main`'e PR ile alındı (PR #1–#6).
 
 ### Test ve canlı doğrulama
@@ -16,7 +16,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 - [x] MSSQL ve Oracle entegrasyon testleri GitHub Actions'ta geçti (2026-11-19, `integration-heavy`, `workflow_dispatch`, `fix/ci-heavy-gpg`, run 44518776450). İlk denemede ODBC deposu gpg adımı etkileşimli onay istediği için düştü; `--batch --yes` ile düzeltildi.
 - [ ] Oracle canlı doğrulama yok (identifier kuralı tek merkezden büyük harf; küçük/karma harfli tırnaklı adlar desteklenmez).
 - [ ] Doris canlı doğrulama yok (sürücü pymysql, port 9030, dialect doris).
-- [ ] Undo/redo uçtan uca testi (`app.js`) tamamlanmadı.
+- [x] Undo/redo uçtan uca testi (2026-11-19): Playwright ile yerel gerçek akış, 17/17 kontrol (düğmeler, Ctrl+Z/Ctrl+Y, ileri dal temizleme, JS hatası yok). Test betiği repo dışında (`/home/yeliz/superbi-e2e/undo_e2e.py`); CI'ya eklenmedi (Chromium yolu yerele özel).
 - [ ] README.md güncellemesi: NLQ motoru, analyze API, granularity, paylaşım/RLS, Doris ve test altyapısı README'de yok.
 
 ### Çalışma düzeni
