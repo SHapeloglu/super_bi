@@ -51,6 +51,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 - [x] Güvenlik incelemesi düzeltmeleri: gizli (off) kolon sızıntısı kapatıldı; rol her istekte DB'den okunuyor (rol iptali); yazma izni yalnız adı değiştirebilir (yapı sahibe kilitli); veri seti silinince kurallar silinir; öznitelik doğrulaması.
 - [x] Faz 1.2 paylaşım: `shares` tablosu, `app/core/sharing.py`, `/api/shares`; dataset/dashboard read/write; rol paylaşımı yalnız okuma; yetkisizde 404; editör rolü.
 - [x] Güvenlik Faz 0.1–0.6 (2026-11-08): SQLite politikası (`sqlite_policy.py`, `DATALENS_SQLITE_ROOT`); bağlantı yalnız admin; açık kayıt kapalı (`DATALENS_ALLOW_REGISTER`); `POST /api/users` (admin); host politikası (`host_policy.py`, `DATALENS_ALLOWED_DB_HOSTS`, loopback/link-local engelli); URL.create ile escape; zorunlu sırlar (`startup_check.py`); hata mesajları sabit.
+- [x] MSSQL sertifika doğrulaması (2026-11-19): varsayılan `TrustServerCertificate=no`; yalnız `DATALENS_MSSQL_TRUST_CERT=yes` ile kapatılır. Test: `tests/security/test_mssql_cert.py`. Kendinden imzalı sertifikalı MSSQL bağlantıları için bu değişken gerekir.
 - [x] Güvenlik ve yetki testleri: `tests/security/run_all.sh`, `tests/access/`, `tests/test_yetki.py` (sürüm öncesi kırmızı-yeşil akışıyla).
 - [x] 2026-11-09 — md seti (kök beş dosya) 2026-11-09 durumuna getirildi (`docs/md-2026-11-09` branch).
 

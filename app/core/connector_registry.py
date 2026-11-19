@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -232,8 +233,10 @@ class ConnectorRegistry:
             import oracledb  # noqa: F401  (sürücü kurulu olmalı)
             return _mk("oracle+oracledb", None, {"service_name": database})
         if db_type == "mssql":
-            # TrustServerCertificate=yes sunucu sertifika kontrolünü kapatır (MITM riski). Ayrı bir görevle ele alınacak.
-            return _mk(dialect, database, {"driver": "ODBC Driver 18 for SQL Server", "TrustServerCertificate": "yes"})
+            # Sertifika doğrulaması varsayılan açık (MITM riski). Yalnız kendinden imzalı sertifika
+            # kullanan kurumlar DATALENS_MSSQL_TRUST_CERT=yes ayarlar; başka değerler "no" sayılır.
+            trust = "yes" if os.environ.get("DATALENS_MSSQL_TRUST_CERT") == "yes" else "no"
+            return _mk(dialect, database, {"driver": "ODBC Driver 18 for SQL Server", "TrustServerCertificate": trust})
         return _mk(dialect, database)
 
     def remove_engine(self, conn_id: str) -> None:

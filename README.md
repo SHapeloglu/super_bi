@@ -162,8 +162,9 @@ pip install psycopg2-binary PyMySQL pyodbc
 
 MSSQL bağlantı dizesi ODBC Driver 18 gerektirir:
 ```
-?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=no
 ```
+Sunucu sertifikası varsayılan olarak doğrulanır. Kendinden imzalı sertifika kullanan bir MSSQL için `DATALENS_MSSQL_TRUST_CERT=yes` ayarlanabilir (MITM riskini kabul ederek).
 
 ## Proje Yapısı
 
