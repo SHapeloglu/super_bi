@@ -142,3 +142,10 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - "Dataset Olarak Kaydet": isim eşleşmesi yalnız kullanıcının kendi veri setleriyle yapılır (`f177f22`, frontend). Admin dahil kimse başkasının veri setini isimle sessizce güncellemez.
 - Tarayıcı testi: admin ve viewer kaydetme akışı GEÇTİ (18/18). Viewer, yalnız bağlantısı olduğunda kaydedebilir; viewer bağlantı oluşturamadığı için normal arayüzde kaydetme yolu kapalıdır (bilinçli sınır).
 - Release ve main eşit: `main` PR #4 ile `f177f22` içeriyor.
+
+## 2026-11-19 — MSSQL sertifika doğrulaması
+- `connector_registry.py`: MSSQL URL'sinde `TrustServerCertificate` artık varsayılan `no`; yalnız `DATALENS_MSSQL_TRUST_CERT=yes` ile `yes` (tam eşleşme; diğer değerler `no`). Önceki sabit `yes` MITM riski taşıyordu (Faz 0 kalıntısı).
+- Test: `tests/security/test_mssql_cert.py` (önce kırmızı: varsayılan `yes` döndü; sonra yeşil). `run_all.sh` tüm güvenlik/yetki testleri geçti.
+- Etki: Kendinden imzalı sertifika kullanan MSSQL bağlantıları `DATALENS_MSSQL_TRUST_CERT=yes` olmadan bağlanamaz. Canlıda MSSQL bağlantısı (`894d2704`) zaten bağlı veri seti var; deploy öncesi bu bağlantının sertifika durumu kontrol edilmeli.
+- Not: `oracledb` requirements'ta yok (sunucuda kurulu); yerel test ortamında elle kurulmalı, `test_url_escape.py` Oracle testi için gerekir.
+- Allowlist: canlı `.env`'de `DATALENS_ALLOWED_DB_HOSTS` tanımlı (değer: `postgres-ortak,mysql-ortak`); bu madde kapandı.
