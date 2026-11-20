@@ -15,7 +15,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 - [x] CI (2026-11-19): `ci.yml` üç işe ayrıldı: `unit-security` (her push/PR; `requirements-test.txt`), `integration-core` (PostgreSQL + MySQL; her push/PR), `integration-heavy` (MSSQL + Oracle; yalnız elle tetiklenir). Yerelde unit-security ve integration-core birebir denendi (PG 7/7, MySQL 8/8, güvenlik paketi geçti). integration-heavy yerelde denenmedi (RAM); ilk GitHub Actions çalıştırmasında doğrulanacak.
 - [x] MSSQL ve Oracle entegrasyon testleri GitHub Actions'ta geçti (2026-11-19, `integration-heavy`, `workflow_dispatch`, `fix/ci-heavy-gpg`, run 44518776450). İlk denemede ODBC deposu gpg adımı etkileşimli onay istediği için düştü; `--batch --yes` ile düzeltildi.
 - [ ] Oracle canlı doğrulama yok (identifier kuralı tek merkezden büyük harf; küçük/karma harfli tırnaklı adlar desteklenmez).
-- [ ] Doris canlı doğrulama yok (sürücü pymysql, port 9030, dialect doris).
+- [x] Doris canlı doğrulama (sürücü pymysql, port 9030, dialect doris): CI run 44556940649, 9 geçti (PR #16).
 - [x] Undo/redo uçtan uca testi (2026-11-19): Playwright ile yerel gerçek akış, 17/17 kontrol (düğmeler, Ctrl+Z/Ctrl+Y, ileri dal temizleme, JS hatası yok). Test betiği repo dışında (`/home/yeliz/superbi-e2e/undo_e2e.py`); CI'ya eklenmedi (Chromium yolu yerele özel).
 - [ ] README.md güncellemesi: NLQ motoru, analyze API, granularity, paylaşım/RLS, Doris ve test altyapısı README'de yok.
 
@@ -41,7 +41,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 
 ### 2026-11-09
 - [x] Release `release/2026-11-09` (`127c74d`) canlıya alındı; sağlık kontrolü ok. Yedekler ve imaj etiketleri `session.md` 2026-11-09 kaydında.
-- [x] Doris sürücüsü (pymysql, port 9030, dialect doris) ve test altyapısı (`docker-compose.test.yml`, `tests/integration/`, `.github/workflows/ci.yml`, `Makefile`, `scripts/test.sh`) release'e entegre (canlı doğrulama açık).
+- [x] Doris sürücüsü (pymysql, port 9030, dialect doris) ve test altyapısı (`docker-compose.test.yml`, `tests/integration/`, `.github/workflows/ci.yml`, `Makefile`, `scripts/test.sh`) release'e entegre (canlı doğrulama PR #16 ile tamamlandı).
 - [x] Frontend hijyeni: CSV formül enjeksiyonu (`frontend/csv_escape.js`, `index.html`'de `app.js`'ten önce), `installDriver` ve id yolları `encodeURIComponent`, `origClose` kaldırıldı, `world.json` ECharts 4.9.0 + SRI, `.bak` dosyaları temizlendi, Ctrl+Z dinleyici düzeltmesi.
 - [x] Backend küçük bulgular: register `IntegrityError` → 409; granularity bozuk metinleri düzeltildi; pip `sys.executable -m pip` (bayraksız); NLQ ↔ analyze sözleşmesi (`normalize_table_profiles`, `sample`).
 - [x] Kaydedilmiş veri setleri: `schema_name` ve `calculated_fields` kalıcı (`datasets.py`, migration `add_column_if_missing`). Frontend gönderimi açık (bkz. 🔜).
