@@ -112,6 +112,33 @@ def test_e_canli_doris_entegrasyonu():
         engine.dispose()
 
 
+def test_f_canli_doris_tablo_olustur_listele_select():
+    """Kabul kriteri (Faz 1.1): canlı Doris'te tablo oluşur, listelenir ve SELECT döner."""
+    url = os.environ.get("DATALENS_IT_DORIS_URL")
+    if not url:
+        raise Skip("DATALENS_IT_DORIS_URL tanımlı değil")
+    from sqlalchemy import create_engine, inspect, text
+    engine = create_engine(url)
+    table = "dl_it_doris_probe"
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+            # Doris anahtar modeli ve dağıtım zorunlu; tek BE için replication_num=1.
+            conn.execute(text(
+                f"CREATE TABLE {table} (id INT, ad VARCHAR(50)) "
+                "DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 "
+                "PROPERTIES(\"replication_num\" = \"1\")"))
+            conn.execute(text(f"INSERT INTO {table} VALUES (1, 'Ayse'), (2, 'Mehmet')"))
+        tables = inspect(engine).get_table_names()
+        assert table in tables, f"tablo listelenmedi (ilk 10): {tables[:10]}"
+        with engine.connect() as conn:
+            n = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+        assert n == 2, f"SELECT beklenen 2 satırı dönmedi: {n}"
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+        engine.dispose()
+
 TESTS = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]
 
 

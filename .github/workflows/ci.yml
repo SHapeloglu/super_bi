@@ -83,3 +83,47 @@ jobs:
       - name: DB servislerini durdur
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
+
+  # Doris (Faz 1.1 kabul kriteri): all-in-one imajı; yalnız elle tetiklenir (bellek ve açılış süresi).
+  integration-doris:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DATALENS_IT_DORIS_URL: mysql+pymysql://root@127.0.0.1:19030/dl_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Doris servisini başlat
+        run: docker compose -f docker-compose.test.yml up -d doris
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test bağımlılıklarını kur
+        run: pip install -r requirements-test.txt
+      - name: Doris hazır olana kadar bekle ve test veritabanını oluştur
+        run: |
+          python - <<'PY'
+          import time, pymysql
+          deadline = time.time() + 900
+          while True:
+              try:
+                  c = pymysql.connect(host="127.0.0.1", port=19030, user="root", password="", autocommit=True)
+                  cur = c.cursor()
+                  cur.execute("SHOW BACKENDS")
+                  cols = [d[0] for d in cur.description]
+                  alive = [r for r in cur.fetchall() if str(r[cols.index("Alive")]).lower() == "true"]
+                  if alive:
+                      break
+              except Exception as e:
+                  print("bekleniyor:", type(e).__name__)
+              if time.time() > deadline:
+                  raise SystemExit("Doris 15 dakikada hazır olmadı")
+              time.sleep(10)
+          cur.execute("CREATE DATABASE IF NOT EXISTS dl_test")
+          print("Doris hazır, dl_test oluşturuldu")
+          PY
+      - name: Doris testlerini çalıştır
+        run: python tests/doris/test_doris_driver.py
+      - name: Doris servisini durdur
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
