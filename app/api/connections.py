@@ -135,6 +135,29 @@ def list_connections(
     return rows
 
 
+@router.get("/shared")
+def list_shared_connections(
+    current = Depends(get_current_user),
+    repo: ConnectionRepository = Depends(get_repo),
+    conn_grants = Depends(get_conn_grant_repo),
+):
+    """
+    Kullanıcıya 'use' ile paylaşılan bağlantılar ve bu bağlantıda veri seti kurabileceği tablolar.
+    Host, kullanıcı, veritabanı ve parola dönmez; admin için de bu uç yalnız paylaşılanları listeler.
+    """
+    out = []
+    for cid in conn_grants.shared_conn_ids(current.user_id):
+        m = repo.get(cid)
+        if m is None:
+            continue
+        out.append({
+            "conn_id": m.conn_id, "db_type": m.db_type, "name": m.name,
+            "tables": [{"schema_name": s or None, "table_name": t}
+                       for s, t in sorted(conn_grants.allowed_tables_list(cid, current.user_id))],
+        })
+    return out
+
+
 @router.delete("/{conn_id}")
 def delete_connection(
     conn_id:  str,
