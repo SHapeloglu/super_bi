@@ -18,7 +18,8 @@ from types import SimpleNamespace
 from pydantic import Field
 
 from app.core.repository import Dataset, DatasetRepository, ConnectionRepository
-from app.deps import get_dataset_repo, get_repo, get_current_user, get_share_repo, get_registry, get_executor, resolve_connection_engine, get_rls_repo, get_attr_repo
+from app.deps import get_dataset_repo, get_repo, get_current_user, get_share_repo, get_registry, get_executor, resolve_connection_engine, resolve_dataset_connection, get_rls_repo, get_attr_repo, get_conn_grant_repo
+from app.core.conn_share import ConnectionShareRepository
 from app.core.rls import RuleRepository, AttributeRepository, build_rls_filters, RLSError
 from app.core.connector_registry import quote_identifier
 from pydantic import model_validator
@@ -58,17 +59,46 @@ class DatasetIn(BaseModel):
     calculated_fields: list    = []
 
 
-def _check_conn_ownership(conn_id: str, current, conn_repo: ConnectionRepository) -> None:
-    """Dataset'in işaret ettiği bağlantı gerçekten bu kullanıcıya mı ait —
-    burada erken uyarmak, widget render sırasında sessizce başarısız
-    olmaktansa kullanıcıya net bir hata mesajı vermeyi sağlar."""
+def _grants(conn_grants) -> Optional[ConnectionShareRepository]:
+    """Bağlantı paylaşım deposu; verilmemişse (doğrudan fonksiyon çağrısı) None → hiçbir paylaşım yok. Güvenli varsayılan."""
+    return conn_grants if isinstance(conn_grants, ConnectionShareRepository) else None
+
+
+def _dataset_tables(base_table: str, joins: list, schema_name: Optional[str]) -> set[tuple[str, str]]:
+    """Veri setinin dokunduğu (şema, tablo) kümesi: ana tablo ve join tabloları. Join tabloları ana şemada kabul edilir."""
+    schema = schema_name or ""
+    names = [base_table] + [j["t1"] for j in joins] + [j["t2"] for j in joins]
+    return {(schema, n) for n in names}
+
+
+def _require_tables(allowed: set[tuple[str, str]], tables: set[tuple[str, str]]) -> None:
+    """İzinli tablo kümesinde olmayan tablo varsa 403."""
+    missing = sorted(t for (sch, t) in tables if (sch, t) not in allowed)
+    if missing:
+        raise HTTPException(status_code=403,
+                            detail=f"Bu tablolar bağlantı paylaşımında yok: {', '.join(missing)}")
+
+
+def _check_conn_access(conn_id: str, tables: set[tuple[str, str]], identity, conn_repo: ConnectionRepository,
+                       conn_grants) -> None:
+    """
+    Veri seti bu bağlantıyı kullanabilir mi. Admin: her bağlantı. Diğerleri: kendi bağlantısı (kısıt yok) ya da
+    'use' ile paylaşılmış bağlantı (yalnız izinli tablolar). Yoksa 404 (varlık sızdırılmaz).
+    Doğrudan çağrıda paylaşım deposu yoksa yalnız kendi bağlantıları kabul edilir.
+    """
     try:
-        if current.role == "admin":
+        if identity.role == "admin":
             conn_repo.get_or_raise(conn_id)
-        else:
-            conn_repo.get_owned_or_raise(conn_id, current.user_id)
+            return
+        conn_repo.get_owned_or_raise(conn_id, identity.user_id)
+        return
     except KeyError:
+        pass
+    grants = _grants(conn_grants)
+    allowed = grants.allowed_tables(conn_id, identity.user_id) if grants else None
+    if allowed is None:
         raise HTTPException(status_code=404, detail=f"Bağlantı bulunamadı: {conn_id}")
+    _require_tables(allowed, tables)
 
 
 @router.post("", status_code=201)
@@ -77,12 +107,15 @@ def create_dataset(
     current    = Depends(get_current_user),
     repo:      DatasetRepository   = Depends(get_dataset_repo),
     conn_repo: ConnectionRepository = Depends(get_repo),
+    conn_grants: ConnectionShareRepository = Depends(get_conn_grant_repo),
 ):
     """
-    Yeni dataset (kayıtlı sorgu) oluşturur (201). Önce bağlantının kullanıcıya ait olduğu kontrol edilir.
+    Yeni dataset (kayıtlı sorgu) oluşturur (201). Önce bağlantının kullanıcıya ait ya da 'use' ile paylaşılmış olduğu
+    ve veri setinin tablolarının paylaşımda izinli olduğu kontrol edilir.
     Dönüş: dataset_id, ad ve mesaj.
     """
-    _check_conn_ownership(body.conn_id, current, conn_repo)
+    _check_conn_access(body.conn_id, _dataset_tables(body.base_table, body.joins, body.schema_name),
+                       current, conn_repo, conn_grants)
 
     # Kısa kimlik: UUID'nin ilk 8 karakteri.
     dataset_id = str(uuid.uuid4())[:8]
@@ -105,6 +138,7 @@ def update_dataset(
     repo:      DatasetRepository   = Depends(get_dataset_repo),
     conn_repo: ConnectionRepository = Depends(get_repo),
     shares:    ShareRepository     = Depends(get_share_repo),
+    conn_grants: ConnectionShareRepository = Depends(get_conn_grant_repo),
 ):
     """
     Var olan dataset'i günceller. Sahip, admin ya da 'write' paylaşımı olan kullanıcı güncelleyebilir.
@@ -134,8 +168,11 @@ def update_dataset(
     # Bağlantı değişiyorsa yeni bağlantının kullanıcıya ait olduğu kontrol edilir.
     # Aynı bağlantı korunuyorsa kontrol yapılmaz: yazma paylaşımı alan kullanıcı sahibin bağlantısını
     # değiştirmeden veri setini düzenleyebilmeli.
-    if body.conn_id != existing.conn_id:
-        _check_conn_ownership(body.conn_id, current, conn_repo)
+    tables_changed = (body.base_table, body.joins, body.schema_name) != (
+        existing.base_table, existing.joins, existing.schema_name)
+    if body.conn_id != existing.conn_id or tables_changed:
+        _check_conn_access(body.conn_id, _dataset_tables(body.base_table, body.joins, body.schema_name),
+                           current, conn_repo, conn_grants)
 
     ds = Dataset(
         dataset_id=dataset_id, owner_id=owner_id, name=body.name,
@@ -337,6 +374,7 @@ def run_dataset(
     executor: QueryExecutor = Depends(get_executor),
     rls_repo: RuleRepository = Depends(get_rls_repo),
     attr_repo: AttributeRepository = Depends(get_attr_repo),
+    conn_grants: ConnectionShareRepository = Depends(get_conn_grant_repo),
 ):
     """
     Kayıtlı veri setini çalıştırır. Okuma izni olan herkes çalıştırabilir; bağlantı VERİ SETİNİN SAHİBİ
@@ -360,8 +398,15 @@ def run_dataset(
         fields = gorunur
 
     # Bağlantı sahibinin kendi kimliği ile açılır; alıcının bağlantı erişimi yoktur.
-    owner = SimpleNamespace(user_id=ds.owner_id, role="viewer")
-    engine, meta = resolve_connection_engine(ds.conn_id, owner, registry, conn_repo)
+    # Veri seti sahibi bağlantıyı 'use' ile paylaşımdan kullanıyorsa: yalnız izinli tablolar, sahibin kimliğiyle.
+    grants = _grants(conn_grants)
+    allowed = grants.allowed_tables(ds.conn_id, ds.owner_id) if grants else None
+    if allowed is not None:
+        _require_tables(allowed, _dataset_tables(ds.base_table, ds.joins, ds.schema_name))
+        engine, meta = resolve_dataset_connection(ds.conn_id, ds.owner_id, registry, conn_repo, grants)
+    else:
+        owner = SimpleNamespace(user_id=ds.owner_id, role="viewer")
+        engine, meta = resolve_connection_engine(ds.conn_id, owner, registry, conn_repo)
 
     # Satır bazlı güvenlik: admin dışındaki herkes (sahip dahil) kuralların altındadır.
     rls_filters = []

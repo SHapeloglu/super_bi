@@ -169,6 +169,13 @@ CREATE TABLE IF NOT EXISTS user_attributes (
     attr_value  TEXT NOT NULL,
     PRIMARY KEY (user_id, attr_key)
 );
+-- Bağlantı paylaşımı: alıcının kullanabileceği tablolar (shares.permission='use' kaydına bağlı).
+CREATE TABLE IF NOT EXISTS connection_share_tables (
+    share_id     TEXT NOT NULL,
+    schema_name  TEXT NOT NULL,
+    table_name   TEXT NOT NULL,
+    PRIMARY KEY (share_id, schema_name, table_name)
+);
 """
 
 
