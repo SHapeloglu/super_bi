@@ -5,6 +5,7 @@ JWT ile kullanıcı kimliği ve bağlantı sahipliği kontrolleri de burada yap�
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -35,6 +36,9 @@ def get_dataset_repo(req: Request) -> DatasetRepository:   return req.app.state.
 # get_share_repo: Paylaşım (shares) repository'sini döner (Faz 1.2).
 def get_share_repo(req: Request):
     return req.app.state.share_repo
+# get_conn_grant_repo: bağlantı 'use' paylaşımları ve izinli tablo listeleri (viewer bağlantı paylaşımı).
+def get_conn_grant_repo(req: Request):
+    return req.app.state.conn_grant_repo
 # get_rls_repo / get_attr_repo: satır kuralları ve kullanıcı öznitelikleri (Faz 1.3).
 def get_rls_repo(req: Request):
     return req.app.state.rls_repo
@@ -163,6 +167,11 @@ def _load_engine_for_owner(
             "action": "POST /api/connections ile yeniden bağlanın.",
         })
 
+    return _engine_for_meta(conn_id, meta, registry), meta
+
+
+def _engine_for_meta(conn_id: str, meta, registry: ConnectorRegistry):
+    """Erişim kontrolü yapılmış bağlantının engine'ini bulur; gerekirse şifreli kayıttan yeniden kurar."""
     # Önce bellekteki (registry) engine'e bakılır. _engines özel bir alandır ama burada doğrudan okunur.
     engine = registry._engines.get(conn_id)
 
@@ -189,7 +198,27 @@ def _load_engine_for_owner(
             "msg":    "Engine yok — sunucu yeniden başlamış olabilir.",
             "action": "POST /api/connections ile yeniden bağlanın.",
         })
-    return engine, meta
+    return engine
+
+
+def resolve_dataset_connection(
+    conn_id:  str,
+    owner_id: str,
+    registry: ConnectorRegistry,
+    repo:     ConnectionRepository,
+    grants,
+):
+    """
+    Veri seti çalıştırma/kurma için bağlantı çözümü. Bağlantı, veri seti SAHİBİNİN kendi bağlantısı
+    ya da ona 'use' izniyle paylaşılmış bir bağlantı olmalı; aksi halde 404 (varlık sızdırılmaz).
+    Şema/sorgu/test uçları bu fonksiyonu KULLANMAZ: onlar yalnız sahip/admin için resolve_connection_engine'i kullanır.
+    """
+    if grants is not None and grants.has_use(conn_id, owner_id):
+        meta = repo.get(conn_id)
+        if meta is None:
+            raise HTTPException(status_code=404, detail={"msg": "Bağlantı bulunamadı.", "action": ""})
+        return _engine_for_meta(conn_id, meta, registry), meta
+    return _load_engine_for_owner(conn_id, SimpleNamespace(user_id=owner_id, role="viewer"), registry, repo)
 
 
 def get_connection_engine(

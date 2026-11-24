@@ -12,7 +12,7 @@ from app.core.host_policy import HostPolicyError
 from app.core.sqlite_policy import SQLitePolicyError
 from app.core.repository import ConnectionMeta, ConnectionRepository
 from app.core.crypto import encrypt_password
-from app.deps import get_registry, get_repo, get_current_user, require_role, resolve_connection_engine
+from app.deps import get_registry, get_repo, get_current_user, require_role, resolve_connection_engine, get_conn_grant_repo
 from app.models.schemas import ConnectionParams, ConnectionResponse, ConnectionTest
 
 router = APIRouter()
@@ -113,15 +113,26 @@ def test_connection(
 def list_connections(
     current = Depends(get_current_user),
     repo: ConnectionRepository = Depends(get_repo),
+    conn_grants = Depends(get_conn_grant_repo),
 ):
-    """admin → herkesinkini görür, diğerleri → sadece kendisininkini."""
+    """
+    admin → herkesinkini görür; diğerleri → kendi bağlantıları ve kendisine 'use' ile paylaşılanlar.
+    Paylaşılan bağlantılarda yalnız kimlik, tür ve ad döner (host, kullanıcı, veritabanı yok).
+    """
     owner = None if current.role == "admin" else current.user_id
-    return [
+    rows = [
         {"conn_id": m.conn_id, "owner_id": m.owner_id, "db_type": m.db_type,
          "host": m.host, "database": m.database, "user": m.user,
          "name": m.name, "created_at": m.created_at, "last_used_at": m.last_used_at}
         for m in repo.list_all(owner_id=owner)
     ]
+    if current.role != "admin":
+        for cid in conn_grants.shared_conn_ids(current.user_id):
+            m = repo.get(cid)
+            if m is None:
+                continue
+            rows.append({"conn_id": m.conn_id, "db_type": m.db_type, "name": m.name, "shared": True})
+    return rows
 
 
 @router.delete("/{conn_id}")
@@ -131,6 +142,7 @@ def delete_connection(
     current                    = Depends(require_role("admin")),
     registry: ConnectorRegistry    = Depends(get_registry),
     repo:     ConnectionRepository = Depends(get_repo),
+    conn_grants = Depends(get_conn_grant_repo),
 ):
     """
     Bağlantıyı siler. Yalnız admin yapabilir. Bulunamazsa 404 döner.
@@ -142,5 +154,7 @@ def delete_connection(
         raise HTTPException(status_code=404, detail="Bağlantı bulunamadı")
 
     # Kayıt silindikten sonra bellekteki bağlantı havuzu da kapatılır.
+    # Bağlantının paylaşımları ve izinli tablo listeleri de kaldırılır.
+    conn_grants.delete_for_connection(conn_id)
     registry.remove_engine(conn_id)
     return {"msg": f"{conn_id} silindi"}

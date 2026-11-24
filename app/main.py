@@ -60,6 +60,8 @@ async def lifespan(app: FastAPI):
     app.state.user_repo = UserRepository(store)
     from app.core.sharing import ShareRepository  # Faz 1.2: paylaşım deposu
     app.state.share_repo = ShareRepository(store)
+    from app.core.conn_share import ConnectionShareRepository  # bağlantı paylaşımı (viewer)
+    app.state.conn_grant_repo = ConnectionShareRepository(store)
     from app.core.rls import RuleRepository, AttributeRepository  # Faz 1.3
     app.state.rls_repo = RuleRepository(store)
     app.state.attr_repo = AttributeRepository(store)

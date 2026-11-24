@@ -208,7 +208,11 @@ def test_update_persists_new_fields():
     body = ds_api.DatasetIn(name="Satış v2", conn_id="c1", base_table="sales",
                             fields={"id": "dim", "amount": "dim"},
                             schema_name="hr", calculated_fields=CALC)
-    ds_api.update_dataset("d1", body, current=_u("owner"), repo=dr, conn_repo=None, shares=sr)
+    # Şema değişimi bağlantı erişimini yeniden denetler (viewer bağlantı paylaşımı); c1 sahibin kendisine ait.
+    from app.core.repository import ConnectionMeta, ConnectionRepository
+    conns = ConnectionRepository(store)
+    conns.save(ConnectionMeta(conn_id="c1", db_type="sqlite", host="", database="x", owner_id="owner"))
+    ds_api.update_dataset("d1", body, current=_u("owner"), repo=dr, conn_repo=conns, shares=sr)
     ds = dr.get("d1")
     assert ds.schema_name == "hr" and ds.calculated_fields == CALC, (ds.schema_name, ds.calculated_fields)
 

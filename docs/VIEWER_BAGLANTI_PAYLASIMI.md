@@ -1,6 +1,6 @@
 # Tasarım notu: Viewer için bağlantı paylaşımı
 
-Durum: **öneri — onay bekliyor, kod yazılmadı.** İlgili backlog maddesi: "Viewer kendi veri setini kaydedemiyor" (`backlog.md`).
+Durum: **ilk dilim uygulandı (dal `feat/viewer-connection-share`).** Karar: seçenek B'nin sınırlı hali; varsayılanlar kabul edildi (yalnız admin'in seçtiği tablolar, kullanım log'u yok, şema listesi gizli). Test: `tests/access/test_connection_share.py` (19 kontrol). İlgili backlog maddesi: "Viewer kendi veri setini kaydedemiyor" (`backlog.md`).
 
 ## Sorun
 
@@ -36,6 +36,14 @@ Admin kaynağı bir kez tanımlar, şema/tablo beyaz listesi koyar, viewer yaln�
 5. Yazma (write) yetkisi bağlantı için yok; bağlantıyı yalnız admin değiştirir/siler.
 
 Bu, A'nın güvenlik sorununu (admin kimliğiyle serbest sorgu) önler, B'nin tek mekanizma avantajını korur.
+
+## Uygulama notu (ilk dilim)
+
+- `shares.resource_type='connection'`, `permission='use'`, yalnız kullanıcıya; tablo listesi `connection_share_tables` (şema, tablo).
+- Alıcı bağlantı listesinde yalnız `conn_id`, `db_type`, `name`, `shared` görür.
+- Veri seti kurma ve çalıştırma yalnız izinli tablolarla; çalıştırma bağlantıyı veri seti sahibi adına açar (`resolve_dataset_connection`).
+- Şema, sorgu, bağlantı testi uçları yalnız sahip/admin için açık kalır (alıcıya 404).
+- Açık kalanlar: arayüz (alıcının tablo seçici listesi için `GET /api/shares?resource_type=connection` yalnız sahibe açık; alıcıya izinli tabloları gösteren uç eklenmedi), kullanım log'u (karar: yok), join tablolarının ana şemada varsayılması.
 
 ## Açık sorular (karar gerekiyor)
 
