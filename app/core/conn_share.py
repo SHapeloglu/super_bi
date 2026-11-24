@@ -64,6 +64,11 @@ class ConnectionShareRepository:
         )
         return {(r["schema_name"], r["table_name"]) for r in rows}
 
+    def allowed_tables_list(self, conn_id: str, user_id: str) -> list[tuple[str, str]]:
+        """Alıcının izinli (şema, tablo) listesi, sıralı; paylaşım yoksa boş."""
+        allowed = self.allowed_tables(conn_id, user_id) or set()
+        return sorted(allowed)
+
     def tables_of(self, share_id: str) -> list[tuple[str, str]]:
         """Bir paylaşımın tablo listesi (şema, tablo), sıralı."""
         rows = self._s.fetchall(

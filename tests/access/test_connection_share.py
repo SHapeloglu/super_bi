@@ -212,6 +212,23 @@ def test_alıcı_paylaşılan_bağlantıyla_şema_ve_sorgu_yapamaz():
     assert _status(lambda: resolve_connection_engine("c1", _viewer("v1"), env.reg, env.conns)) == 404
 
 
+def test_alıcı_kendisine_paylaşılan_bağlantı_ve_izinli_tablolarını_görür():
+    env = _setup()
+    _grant(env)
+    rows = conn_api.list_shared_connections(current=_viewer("v1"), repo=env.conns, conn_grants=env.grants)
+    assert len(rows) == 1 and rows[0]["conn_id"] == "c1", rows
+    assert rows[0]["tables"] == [{"schema_name": None, "table_name": "customers"},
+                                 {"schema_name": None, "table_name": "sales"}], rows[0]["tables"]
+    for yasak in ("host", "user", "database", "password", "password_enc", "owner_id"):
+        assert yasak not in rows[0], f"{yasak} alıcıya sızdı"
+
+
+def test_paylaşılmamış_alıcı_paylaşılan_liste_boş_görür():
+    env = _setup()
+    _grant(env)
+    assert conn_api.list_shared_connections(current=_viewer("v2"), repo=env.conns, conn_grants=env.grants) == []
+
+
 def test_sahibi_bağlantıyı_hâlâ_kullanır():
     env = _setup()
     engine, meta = resolve_connection_engine("c1", _viewer("admin1"), env.reg, env.conns)
