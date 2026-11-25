@@ -170,3 +170,10 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - Canlı deploy: yedek `/root/yedekler/predeploy-viewer-20261125-093006/` (superbi.db sha256 `8aa0c2bb…`, `.env` izin 600). Sunucuda `/opt/superbi` `921dbfb`'ye ileri alındı, `superbi` konteyneri yeniden kuruldu. `connection_share_tables` canlı DB'de oluştu; health 200, paylaşılan uç girişsiz 401, `shared_connections.js` 200.
 - Konteyner AutoSleep (`/opt/autosleep/autosleep.py`, `TIMEOUT=300`) ile yönetiliyor: 5 dk boşta kalırsa durdurulur, 19 Kasım'dan beri kapalıydı. Eşik değişikliği kararı açık.
 - Açık kalanlar: dashboard widget yolu paylaşılan bağlantıda hâlâ `listColumns` kullanıyor; "Önerilen İlişkiler" ve analiz paylaşılan bağlantı için kapsam dışı.
+
+## 2026-11-25 — AutoSleep SuperBI eşiği, md senkronu, v2 planı
+- Canlıda SuperBI 5 gün (19 Kasım'dan beri) uykuda kaldı; deploy sonrası da boşta kalınca kapanıyordu. `/opt/autosleep/ek_projeler.py` içinde yalnız SuperBI'ye `zaman_asimi: 1800` (30 dk) eklendi; `autosleep.py` proje başına eşik okuyacak şekilde değişti. Genel eşik 5 dk; diğer siteler etkilenmedi.
+- Yedek: `/root/yedekler/autosleep-20261125-zaman-asimi/` (iki dosya + SHA256SUMS). `/opt/autosleep` git deposunda, önceden commitlenmemiş başka değişiklikler vardı; onlara dokunulmadı.
+- Konteyner `docker start superbi` ile açıldı (health 200). 30 dk dolmadan uyumadığı doğrulanmadı; sonraki AutoSleep günlüklerinde `superbi idle=` satırları izlenmeli.
+- Doğrulama: `editor` rolü kod ve canlı DB'de zaten yok (`ROLES = admin, viewer`); LICENSE (Apache 2.0) repoda. Eski notlar bu nedenle kapatıldı.
+- `GELISTIRME_GOREVLERI_v2.md` içeriği `backlog.md` "Faz planı" bölümüne taşındı; dosya repodan kaldırıldı (yedek repo dışında).
