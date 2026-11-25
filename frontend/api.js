@@ -79,6 +79,10 @@ export function createApiClient(baseUrl, getToken) {
 
     // ---- connections ----
     listConnections: () => request("GET", "/api/connections"),
+    // Alıcı için: kendisine 'use' ile paylaşılan bağlantılar ve izinli tabloları.
+    listSharedConnections: () => request("GET", "/api/connections/shared"),
+    listSharedColumns: (connId, table, schema) =>
+      request("GET", `/api/connections/shared/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/columns${schema ? `?schema=${encodeURIComponent(schema)}` : ""}`),
     /**
      * Yeni veritabanı bağlantısı oluşturur. params: bağlantı bilgileri (sunucu adı, veritabanı, kullanıcı vb.).
      */
