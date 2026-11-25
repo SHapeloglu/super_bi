@@ -7,7 +7,13 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 ### DuckDB ingest — incremental refresh
 - **Kategori:** yeni özellik
 - **Neden:** cross-DB JOIN için kaynak verinin yerelde tutulup kademeli yenilenmesi.
-- **Notlar:** DuckDB PoC (600K satır, 873 ms, 27 MB) başarılı. Persisted dosya modu, memory_limit=1.5 GB, threads=2. SBX derleyici hedefi tek dialekt (duckdb). RAM planlaması gerekli (konteyner `mem_limit` 384 MB). Incremental refresh delta yükleme stratejisi; DuckDB ingest ile birlikte tasarlanacak.
+- **Notlar:** DuckDB PoC (600K satır, 873 ms, 27 MB) başarılı. memory_limit=1.5 GB, threads=2. SBX derleyici hedefi tek dialekt (duckdb). Incremental refresh delta yükleme stratejisi; DuckDB ingest ile birlikte tasarlanacak.
+- **İşletim kararları (2026-11-25):**
+  1. Yalnız gerektiğinde çalışır: ingest kullanıcı isteğiyle başlar, bitince bellek serbest kalır; sürekli çalışan DuckDB süreci yok.
+  2. İlk sürüm geçici (ephemeral) mod: her ingest geçici dosyada yapılır, iş bitince silinir. Kalıcı (persisted) mod disk kararı netleşince gelir.
+  3. Disk koruması: disk doluluğu %85'i geçerse yeni ingest başlatılmaz (uyarı ve reddetme). Uyarı kanalı (e-posta/log) ayrıca seçilecek.
+  4. Bellek: `superbi` konteyneri `mem_limit` 2 GB (2026-11-25); DuckDB `memory_limit` 1.5 GB, konteyner içinde pay bırakır.
+  5. Ön koşul: disk temizliği (kullanılmayan Docker imajları) yapılmadan ingest açılmaz; geri dönüş etiketli imajlar korunur.
 
 ### Excel / CSV / JSON dosya kaynağı
 - **Kategori:** yeni özellik

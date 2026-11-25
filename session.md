@@ -177,3 +177,9 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - Konteyner `docker start superbi` ile açıldı (health 200). 30 dk dolmadan uyumadığı doğrulanmadı; sonraki AutoSleep günlüklerinde `superbi idle=` satırları izlenmeli.
 - Doğrulama: `editor` rolü kod ve canlı DB'de zaten yok (`ROLES = admin, viewer`); LICENSE (Apache 2.0) repoda. Eski notlar bu nedenle kapatıldı.
 - `GELISTIRME_GOREVLERI_v2.md` içeriği `backlog.md` "Faz planı" bölümüne taşındı; dosya repodan kaldırıldı (yedek repo dışında).
+
+## 2026-11-25 — Kapasite: bellek sınırı ve DuckDB işletim kararları
+- Ölçüm: RAM 11,9 GB toplam / 7,2 GB kullanılabilir; disk %93 (15 GB boş); Docker imajları 34 GB geri kazanılabilir. 16 GB yükseltme şimdilik gerekli görülmedi.
+- `superbi` konteyneri `mem_limit` 384 MB → 2 GB (compose değişikliği, PR). Sunucuda yeniden oluşturma ile uygulanacak; önce `superbi.db` yedeği.
+- DuckDB işletim kararları backlog.md'ye yazıldı: on-demand çalışma, ilk sürümde geçici mod, disk %85 eşiğinde reddetme, Docker imaj temizliği önkoşul.
+- Docker imaj temizliği (34 GB) ayrıca incelenecek; geri dönüş etiketleri korunacak.
