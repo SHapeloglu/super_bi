@@ -6,7 +6,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 
 ### Güvenlik ve yetki (2026-11-09 açık kalanlar)
 - [x] Frontend `schema_name` ve `calculated_fields` gönderiyor (`dataset_payload.js`, 2026-11-09).
-- [ ] Tarayıcıda paylaşılan veri seti widget testi tamamlanmadı (alıcı rolü, 404, kolon alt kümesi, RLS).
+- [x] Paylaşılan veri seti senaryosu (2026-11-25, yerel API): alıcı paylaşılan listeyi görüyor; izinli tablo kolonu 200, izinsiz tablo kolonu ve şema listesi 404; izinli tablo üzerinde veri seti kurulup çalıştı (200); izinsiz tablo ile veri seti 403. Tarayıcı (widget UI) testi hâlâ açık.
 - [x] Viewer UI: bağlantı formu ve yetkisiz düğmeler gizlendi (`role_gating.js`, 2026-11-09).
 - [x] Eski bağlantılar (2026-11-19): kalan 2 bağlantı (Oracle `e03988d1`, MSSQL `894d2704`) ve bağlı 2 veri seti (`ffc31fa6`, `e076fd42`; sahip viewer hesabı) silindi; yedek `/root/yedekler/legacy2-20261119-1628`. Silme uygulamanın repository sınıflarıyla yapıldı (paylaşım ve RLS kayıtları dahil). Canlı DB: 0 veri seti, 0 bağlantı, 2 kullanıcı. `DATALENS_ALLOWED_DB_HOSTS` konteynerde tanımlı.
 - [x] Release `main`'e PR ile alındı (PR #1–#6).
@@ -21,7 +21,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 
 ### Çalışma düzeni
 - [x] SuperBI AutoSleep eşiği 30 dk (2026-11-25, `ek_projeler.py` `zaman_asimi`); diğer siteler genel 5 dk eşiğinde kaldı.
-- [ ] Dashboard widget yolu paylaşılan bağlantıda eski kolon ucunu (`listColumns`) kullanıyor.
+- [x] Dashboard manuel bağlama (`renderManualBinding`, grafik formu) yalnız sahibin bağlantılarını listeler ve sahip uçlarını kullanır; alıcı paylaşılan bağlantıyı bu yoldan göremez. Alıcının widget'ı veri seti üzerinden çalışır (kapsam kararı; kod değişmedi).
 - [x] `/opt/superbi` çalışma ağacı temiz; yama betikleri `scripts/archive/` altında.
 - [ ] `/root/superbi/backend/sbx/` ayrı ve eski kopya. Silme/arşiv kararı gerekli.
 - [ ] Kök dizinde 0 baytlık `superbi.db`, `pbixdb`, `odoo_test` — veri yolu karışıklığı riski (gerçek DB `data/superbi.db`).
