@@ -5,14 +5,15 @@ Kimlik ve sahiplik kontrolleri app.deps'te yapılır.
 import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import text
+from typing import Optional
+from sqlalchemy import inspect, text
 
 from app.core.connector_registry import ConnectorRegistry
 from app.core.host_policy import HostPolicyError
 from app.core.sqlite_policy import SQLitePolicyError
 from app.core.repository import ConnectionMeta, ConnectionRepository
 from app.core.crypto import encrypt_password
-from app.deps import get_registry, get_repo, get_current_user, require_role, resolve_connection_engine, get_conn_grant_repo
+from app.deps import get_registry, get_repo, get_current_user, require_role, resolve_connection_engine, resolve_dataset_connection, get_conn_grant_repo
 from app.models.schemas import ConnectionParams, ConnectionResponse, ConnectionTest
 
 router = APIRouter()
@@ -116,8 +117,8 @@ def list_connections(
     conn_grants = Depends(get_conn_grant_repo),
 ):
     """
-    admin → herkesinkini görür; diğerleri → kendi bağlantıları ve kendisine 'use' ile paylaşılanlar.
-    Paylaşılan bağlantılarda yalnız kimlik, tür ve ad döner (host, kullanıcı, veritabanı yok).
+    admin → herkesinkini görür; diğerleri → yalnız kendi bağlantıları.
+    Kendisine 'use' ile paylaşılan bağlantılar için GET /api/connections/shared kullanılır.
     """
     owner = None if current.role == "admin" else current.user_id
     rows = [
@@ -126,12 +127,6 @@ def list_connections(
          "name": m.name, "created_at": m.created_at, "last_used_at": m.last_used_at}
         for m in repo.list_all(owner_id=owner)
     ]
-    if current.role != "admin":
-        for cid in conn_grants.shared_conn_ids(current.user_id):
-            m = repo.get(cid)
-            if m is None:
-                continue
-            rows.append({"conn_id": m.conn_id, "db_type": m.db_type, "name": m.name, "shared": True})
     return rows
 
 
@@ -156,6 +151,39 @@ def list_shared_connections(
                        for s, t in sorted(conn_grants.allowed_tables_list(cid, current.user_id))],
         })
     return out
+
+
+@router.get("/shared/{conn_id}/tables/{table_name}/columns")
+def list_shared_columns(
+    conn_id:    str,
+    table_name: str,
+    schema: Optional[str] = None,
+    current = Depends(get_current_user),
+    registry: ConnectorRegistry = Depends(get_registry),
+    repo:     ConnectionRepository = Depends(get_repo),
+    conn_grants = Depends(get_conn_grant_repo),
+):
+    """
+    Alıcının paylaşılan bağlantısındaki İZİNLİ bir tablonun kolonları. İzinsiz tablo ya da paylaşılmamış bağlantı 404.
+    Bağlantı, alıcının kendi kimliğiyle değil, paylaşımın yetkisiyle açılır (yalnız kolon adı/tipi döner).
+    """
+    allowed = conn_grants.allowed_tables(conn_id, current.user_id)
+    if allowed is None or (schema or "", table_name) not in allowed:
+        raise HTTPException(status_code=404, detail="Tablo bulunamadı")
+    engine, _meta = resolve_dataset_connection(conn_id, current.user_id, registry, repo, conn_grants)
+    try:
+        insp = inspect(engine)
+        if table_name not in insp.get_table_names(schema=schema):
+            raise HTTPException(status_code=404, detail="Tablo bulunamadı")
+        cols = insp.get_columns(table_name, schema=schema)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="Şema okunamadı")
+    return {
+        "table": table_name,
+        "columns": [{"name": c["name"], "type": str(c["type"]), "nullable": c.get("nullable", True)} for c in cols],
+    }
 
 
 @router.delete("/{conn_id}")

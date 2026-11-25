@@ -43,7 +43,8 @@ Bu, A'nın güvenlik sorununu (admin kimliğiyle serbest sorgu) önler, B'nin te
 - Alıcı bağlantı listesinde yalnız `conn_id`, `db_type`, `name`, `shared` görür.
 - Veri seti kurma ve çalıştırma yalnız izinli tablolarla; çalıştırma bağlantıyı veri seti sahibi adına açar (`resolve_dataset_connection`).
 - Şema, sorgu, bağlantı testi uçları yalnız sahip/admin için açık kalır (alıcıya 404).
-- Açık kalanlar: arayüz (alıcının tablo seçici listesi için `GET /api/shares?resource_type=connection` yalnız sahibe açık; alıcıya izinli tabloları gösteren uç eklenmedi), kullanım log'u (karar: yok), join tablolarının ana şemada varsayılması.
+- Alıcı tablo seçici: `GET /api/connections/shared` (bağlantı + izinli tablolar) ve `GET /api/connections/shared/{conn}/tables/{table}/columns` (yalnız izinli tablo, aksi 404). Sorgu Oluşturucu'da paylaşılan bağlantıda tablo listesi izin listesinden gelir; önizleme ve doğrudan çalıştırma kapalıdır (veri seti kaydedilip Veri Setleri'nden çalıştırılır).
+- Açık kalanlar: dashboard widget yolu (paylaşılan bağlantıda hâlâ `listColumns`), "Önerilen İlişkiler" ve analiz (paylaşılan bağlantı için kapsam dışı), kullanım log'u (karar: yok), join tablolarının ana şemada varsayılması.
 
 ## Açık sorular (karar gerekiyor)
 

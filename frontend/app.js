@@ -8,6 +8,7 @@ import { createApiClient } from "./api.js";
 // CSV yardımcıları csv_escape.js (klasik script, index.html'de app.js'ten önce yüklenir) içinden gelir.
 const { rowsToCsv } = window.SuperBICsv;
 const SuperBIHistory = window.SuperBIHistory;
+const SuperBIShared = window.SuperBIShared;
 
 /* ============================================================
  * Ayarlar + global state
@@ -30,6 +31,7 @@ const state = {
   view: "connections",
 
   connections: [],
+  sharedConnections: [],
   selectedConnId: null,
 
   tables: [],
@@ -423,6 +425,16 @@ async function renderConnectionsView(root) {
  */
 async function refreshConnections() {
   state.connections = await api.listConnections();
+  try { state.sharedConnections = await api.listSharedConnections(); } catch (e) { state.sharedConnections = []; }
+}
+
+/**
+ * Kolon listesini doğru uçtan çeker: paylaşılan bağlantıda yalnız izinli tabloların kolonları (sunucu zaten denetler).
+ */
+function fetchColumns(connId, table, schema) {
+  return SuperBIShared.isShared(state.sharedConnections, connId)
+    ? api.listSharedColumns(connId, table, schema)
+    : api.listColumns(connId, table, schema);
 }
 
 /**
@@ -629,11 +641,12 @@ function resetQueryBuilderState() {
 async function renderQueryView(root) {
   root.appendChild(el("h2", {}, "Sorgu Oluşturucu"));
 
-  if (!state.connections.length) {
+  if (!state.connections.length && !state.sharedConnections.length) {
     try { await refreshConnections(); } catch (e) { handleApiError(e); }
   }
 
-  if (!state.connections.length) {
+  const connOptions = SuperBIShared.connectionOptions(state.connections, state.sharedConnections);
+  if (!connOptions.length) {
     root.appendChild(el("div", { class: "card" }, el("div", { class: "empty-state" },
       "Önce 'Bağlantılar' sekmesinden bir bağlantı oluşturun."
     )));
@@ -642,7 +655,7 @@ async function renderQueryView(root) {
 
   const topCard = el("div", { class: "card" });
   const connSel = el("select", { id: "qb-conn-select" },
-    state.connections.map((c) => el("option", { value: c.conn_id }, `${c.conn_id} (${c.database})`))
+    connOptions.map((o) => el("option", { value: o.value }, o.label))
   );
   if (state.selectedConnId) connSel.value = state.selectedConnId;
 
@@ -671,6 +684,8 @@ async function renderQueryView(root) {
   async function loadSchemasFor(connId) {
     schemaSel.innerHTML = "";
     schemaSel.appendChild(el("option", { value: "" }, "(varsayılan)"));
+    // Paylaşılan bağlantıda şema listesi görünmez; tablolar izin listesinden gelir.
+    if (SuperBIShared.isShared(state.sharedConnections, connId)) return;
     try {
       const res = await api.listSchemas(connId);
       for (const s of res.schemas || []) schemaSel.appendChild(el("option", { value: s }, s));
@@ -691,6 +706,20 @@ async function renderQueryView(root) {
     state.selectedSchema = schema || null;
     tableSel.innerHTML = "";
     tableSel.appendChild(el("option", { value: "" }, "Yükleniyor…"));
+    if (SuperBIShared.isShared(state.sharedConnections, connId)) {
+      // Paylaşılan bağlantı: yalnız sunucunun izin verdiği tablolar (şema/tablo listesi sunucudan istenmez).
+      const opts = SuperBIShared.sharedTableOptions(state.sharedConnections, connId);
+      state.tables = opts.map((o) => o.text);
+      tableSel.innerHTML = "";
+      tableSel.appendChild(el("option", { value: "" }, "Tablo seçin…"));
+      for (const o of opts) tableSel.appendChild(el("option", { value: o.text }, o.text));
+      const prev = state.selectedTable && opts.find((o) => o.table === state.selectedTable && (o.schema || null) === (state.selectedSchema || null));
+      if (prev) {
+        tableSel.value = prev.text;
+        await loadColumnsFor(connId, prev.table, prev.schema);
+      }
+      return;
+    }
     try {
       const res = await api.listTables(connId, schema);
       state.tables = res.tables || [];
@@ -722,7 +751,7 @@ async function renderQueryView(root) {
     state.orderBy = [];
     state.calculatedFields = [];
     try {
-      const res = await api.listColumns(connId, table, schema);
+      const res = await fetchColumns(connId, table, schema);
       state.columns = res.columns || [];
       for (const c of state.columns) state.fields[c.name] = "dim";
       builderCard.style.display = "block";
@@ -746,6 +775,11 @@ async function renderQueryView(root) {
 
   tableSel.addEventListener("change", () => {
     if (!tableSel.value) { builderCard.style.display = "none"; return; }
+    if (SuperBIShared.isShared(state.sharedConnections, connSel.value)) {
+      const hit = SuperBIShared.findSharedTable(SuperBIShared.sharedTableOptions(state.sharedConnections, connSel.value), tableSel.value);
+      if (hit) loadColumnsFor(connSel.value, hit.table, hit.schema);
+      return;
+    }
     loadColumnsFor(connSel.value, tableSel.value, schemaSel.value);
   });
 
@@ -879,7 +913,7 @@ async function getColumnsForTable(connId, table) {
   const key = `${connId}::${table}`;
   if (state._joinColumnsCache[key]) return state._joinColumnsCache[key];
   try {
-    const res = await api.listColumns(connId, table);
+    const res = await fetchColumns(connId, table);
     state._joinColumnsCache[key] = res.columns || [];
     return state._joinColumnsCache[key];
   } catch (e) {
@@ -1099,6 +1133,10 @@ function renderCalcFieldsBox(box) {
  * Parametre resultCard = sonucun yazılacağı kart.
  */
 async function doPreview(resultCard) {
+  if (SuperBIShared.isShared(state.sharedConnections, state.selectedConnId)) {
+    toast("Paylaşılan bağlantıda önizleme yok; veri setini kaydedip Veri Setleri'nden çalıştırın", "info");
+    return;
+  }
   try {
     const conn = state.connections.find((c) => c.conn_id === state.selectedConnId);
     const body = { ...buildQueryShape(), limit: state.sample, db_type: conn ? conn.db_type : "sqlite" };
@@ -1113,6 +1151,10 @@ async function doPreview(resultCard) {
  * Parametre resultCard = sonucun yazılacağı kart.
  */
 async function doRun(resultCard) {
+  if (SuperBIShared.isShared(state.sharedConnections, state.selectedConnId)) {
+    toast("Paylaşılan bağlantıda doğrudan çalıştırma yok; veri setini kaydedip Veri Setleri'nden çalıştırın", "info");
+    return;
+  }
   try {
     const body = { ...buildQueryShape(), sample: state.sample, commit: false, mode: "memory" };
     const res = await api.runQuery(body);

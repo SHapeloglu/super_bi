@@ -187,15 +187,12 @@ def test_sahip_olmayan_bağlantıyı_paylaşamaz():
 
 # ---------------------------------------------------------------- görünürlük
 
-def test_alıcı_bağlantı_listesinde_hassas_alan_görmez():
+def test_alıcı_bağlantı_listesinde_paylaşılan_bağlantı_yok():
+    # Paylaşılanlar yalnız GET /api/connections/shared ile gelir; ana liste yalnız kendi bağlantılarıdır.
     env = _setup()
     _grant(env)
     rows = conn_api.list_connections(current=_viewer("v1"), repo=env.conns, conn_grants=env.grants)
-    assert [r["conn_id"] for r in rows] == ["c1"], rows
-    row = rows[0]
-    for yasak in ("host", "user", "database", "password", "password_enc", "owner_id"):
-        assert yasak not in row, f"{yasak} alıcıya sızdı"
-    assert row.get("shared") is True
+    assert rows == [], rows
 
 
 def test_paylaşılmamış_bağlantı_listede_yok():
@@ -227,6 +224,41 @@ def test_paylaşılmamış_alıcı_paylaşılan_liste_boş_görür():
     env = _setup()
     _grant(env)
     assert conn_api.list_shared_connections(current=_viewer("v2"), repo=env.conns, conn_grants=env.grants) == []
+
+
+def _sqlite_env():
+    """Gerçek bir SQLite engine: 'sales' izinli, 'payroll' izinsiz."""
+    from sqlalchemy import create_engine, text
+    eng = create_engine("sqlite://")
+    with eng.begin() as c:
+        c.execute(text("CREATE TABLE sales (id INTEGER, amount REAL)"))
+        c.execute(text("CREATE TABLE payroll (id INTEGER, salary REAL)"))
+    env = _setup()
+    env.reg._engines["c1"] = eng
+    return env
+
+
+def test_alıcı_izinli_tablonun_kolonlarını_görür():
+    env = _sqlite_env()
+    _grant(env, tables=("sales",))
+    out = conn_api.list_shared_columns("c1", "sales", current=_viewer("v1"), repo=env.conns,
+                                       registry=env.reg, conn_grants=env.grants)
+    assert out["table"] == "sales"
+    assert [c["name"] for c in out["columns"]] == ["id", "amount"], out
+
+
+def test_alıcı_izinsiz_tablonun_kolonlarını_göremez():
+    env = _sqlite_env()
+    _grant(env, tables=("sales",))
+    assert _status(lambda: conn_api.list_shared_columns("c1", "payroll", current=_viewer("v1"), repo=env.conns,
+                                                        registry=env.reg, conn_grants=env.grants)) == 404
+
+
+def test_paylaşılmamış_bağlantının_kolonları_alıcıya_kapalı():
+    env = _sqlite_env()
+    _grant(env, tables=("sales",))
+    assert _status(lambda: conn_api.list_shared_columns("c2", "sales", current=_viewer("v1"), repo=env.conns,
+                                                        registry=env.reg, conn_grants=env.grants)) == 404
 
 
 def test_sahibi_bağlantıyı_hâlâ_kullanır():
