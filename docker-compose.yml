@@ -18,8 +18,8 @@ services:
       - ./data:/data
     # ortak-db ağına bağlanır; ortak DB'lere bu ağ üzerinden erişilir.
     networks: [ortak-db]
-    # Bellek üst sınırı 384 MB.
-    mem_limit: 384m
+    # Bellek üst sınırı 2 GB (2026-11-25; DuckDB memory_limit 1.5 GB için 384 MB yetmiyordu).
+    mem_limit: 2g
 networks:
   ortak-db:
     external: true

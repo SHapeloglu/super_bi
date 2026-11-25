@@ -193,7 +193,7 @@ Desteklenen: Oracle XE, MSSQL (named-schema destekli), MySQL, PostgreSQL, SQLite
 
 ## Kapasite
 
-Kayıtlı değer (eski kayıt 2026-09-16): VPS 7.8 GB RAM, swap dolu, 12 Docker konteyneri. Güncel kapasite doğrulanmadı. Konteyner `mem_limit` 384 MB; DuckDB ingest öncesi RAM planlaması gerekli.
+Ölçüm (2026-11-25): RAM 11,9 GB toplam, 7,2 GB kullanılabilir, swap 4,3/10 GB kullanımda. Disk %93 dolu (15 GB boş); Docker imajları 34 GB geri kazanılabilir. Konteyner `mem_limit`: `superbi` 2 GB (önceki 384 MB). DuckDB ingest: yalnız gerektiğinde, ilk sürümde geçici mod, disk %85 eşiğinde reddetme (bkz. backlog.md). 16 GB yükseltme şu an gerekli görülmüyor.
 
 ## Anahtar Kararlar Özeti
 

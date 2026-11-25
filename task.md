@@ -31,7 +31,7 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 
 ### Sonraki sıra (öncelik sırasıyla; ayrıntı backlog.md)
 - [ ] Kural tabanlı Türkçe NLQ (Kademe 1, LLM yok): `app/services/nlq/` altında kod var; ilk kalıp Top-N. Hangi kalıbın bittiği doğrulanmalı.
-- [ ] DuckDB ingest — cross-DB JOIN, incremental refresh (RAM planlaması şart).
+- [ ] DuckDB ingest — cross-DB JOIN, incremental refresh. İşletim kararları backlog.md'de (on-demand, geçici mod, disk %85 eşiği); önkoşul: Docker imaj temizliği (onay bekliyor).
 - [ ] Excel/CSV/JSON dosya kaynağı.
 - [ ] Production VPS kapasite kararı (RAM yükseltme veya ayrı VPS).
 
