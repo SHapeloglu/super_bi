@@ -162,3 +162,11 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - Eski iki bağlantı ve bağlı iki veri seti silindi (yedek `/root/yedekler/legacy2-20261119-1628`). Silme uygulamanın repository sınıflarıyla yapıldı; şema değişikliği yok. Canlı DB: 0 veri seti, 0 bağlantı, 2 kullanıcı, 0 paylaşım, 0 kural.
 - Konteyner AutoSleep ile uykuda (`Exited`); ilk istekte uyanır, deploy yapılmadı.
 - Doris: sunucuda RAM yetersiz (≈3,8 GB boş); CI'da elle tetiklenen iş için onay bekliyor.
+
+## 2026-11-25 — Viewer bağlantı paylaşımı: tablo seçici ve canlıya alma
+- Tablo seçici (PR #20, merge `921dbfb`): alıcı paylaşılan bağlantıyı seçer, tablo listesi yalnız izinli tablolardan gelir, kolonlar `GET /api/connections/shared/{conn}/tables/{table}/columns` ile çekilir (izinli olmayan tablo 404). Paylaşılan bağlantıda önizleme ve doğrudan çalıştırma kapalı; veri seti kaydedilip Veri Setleri'nden çalıştırılır.
+- Testler: `test_connection_share.py` 24/24, `shared_connections.test.js` 5/5, `scripts/test.sh security` geçti; CI `unit-security` ve `integration-core` yeşil.
+- Yerel tarayıcı testi (Playwright): alıcı paylaşılan bağlantıyı görüyor, yalnız `sales` listeleniyor, `payroll` yok, seçince kolonlar yükleniyor.
+- Canlı deploy: yedek `/root/yedekler/predeploy-viewer-20261125-093006/` (superbi.db sha256 `8aa0c2bb…`, `.env` izin 600). Sunucuda `/opt/superbi` `921dbfb`'ye ileri alındı, `superbi` konteyneri yeniden kuruldu. `connection_share_tables` canlı DB'de oluştu; health 200, paylaşılan uç girişsiz 401, `shared_connections.js` 200.
+- Konteyner AutoSleep (`/opt/autosleep/autosleep.py`, `TIMEOUT=300`) ile yönetiliyor: 5 dk boşta kalırsa durdurulur, 19 Kasım'dan beri kapalıydı. Eşik değişikliği kararı açık.
+- Açık kalanlar: dashboard widget yolu paylaşılan bağlantıda hâlâ `listColumns` kullanıyor; "Önerilen İlişkiler" ve analiz paylaşılan bağlantı için kapsam dışı.
