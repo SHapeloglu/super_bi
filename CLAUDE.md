@@ -26,7 +26,7 @@ docker logs --tail 100 superbi
 docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 ```
 
-- AutoSleep (`/opt/autosleep/ek_projeler.py`, 2026-10-18'den beri Docker'da) boşta kalan konteyneri durdurabilir; bu bilinçli davranıştır, hata değildir. Konteyner boştaysa `Exited` görünür; ilk istekte uyanır.
+- AutoSleep (`/opt/autosleep/ek_projeler.py`, 2026-10-18'den beri Docker'da) boşta kalan konteyneri durdurabilir; bu bilinçli davranıştır, hata değildir. SuperBI için eşik 30 dk (`zaman_asimi`, 2026-11-25); diğer siteler 5 dk. Konteyner boştaysa `Exited` görünür; ilk istekte uyanır.
 - Veri: `/opt/superbi/data/superbi.db` (konteynerde `/data`). Günlük yedek: `scripts/backup.sh` → `/opt/superbi/backups/`.
 - Eski kayıt (2026-09-16): servis systemd idi; Docker'a geçildi.
 
@@ -65,7 +65,7 @@ docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 - **MSSQL'de LIMIT yok:** `sql_builder` offset=0 için `SELECT TOP n`, offset>0 için `OFFSET...FETCH NEXT` üretir (ORDER BY yoksa `ORDER BY (SELECT NULL)`).
 - **Önizleme dialekti:** Preview endpoint'i seçili bağlantının gerçek `db_type`'ını kullanır (önceden hep sqlite varsayılıyordu).
 - **Çok şemalı DB'ler (MSSQL/PostgreSQL):** `?schema=` parametresi var. AdventureWorks2022 gibi named-schema DB'lerde asıl tablolar dbo DIŞINDA (Sales, Production, Person, HumanResources, Purchasing).
-- **Şema desteği sınırı:** `schema_name` canlı Sorgu Oluşturucu'da ve dataset backend'inde var. Frontend "Dataset Olarak Kaydet" payload'ı `schema_name` ve `calculated_fields`'i henüz göndermiyor (task.md 🔜).
+- **Şema desteği:** `schema_name` ve `calculated_fields` Sorgu Oluşturucu'da, dataset backend'inde ve "Dataset Olarak Kaydet" payload'ında var (2026-11-09). Eski sınır notu kapandı.
 - **Fernet anahtarı:** `DATALENS_DB_ENCRYPTION_KEY` yedeklenmeli (JWT secret gibi). Kaybolursa kayıtlı parolalar kurtarılamaz. Anahtar DB dosyasından ayrı tutulur.
 - **Zorunlu ortam değişkenleri:** `DATALENS_JWT_SECRET`, `DATALENS_DB_ENCRYPTION_KEY`, `DATALENS_DB` (eksikse uygulama açılmaz). Kayıt kapalı (`DATALENS_ALLOW_REGISTER`), SQLite kökü (`DATALENS_SQLITE_ROOT`) ve DB host listesi (`DATALENS_ALLOWED_DB_HOSTS`) ayrı kurallardır. Değerleri yazılmaz.
 - **Kapasite (eski kayıt 2026-09-16):** 7.8 GB RAM, swap dolu, 12 konteyner. DuckDB ingest öncesi RAM planlaması şart; büyümede 16 GB+ veya ayrı VPS. Güncel değer doğrulanmalı.
@@ -103,4 +103,4 @@ docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 
 ---
 
-Son güncelleme: 2026-11-12 (editor rolü kaldırıldı, LICENSE eklendi, eski bağlantılar temizlendi, md düzeltmesi).
+Son güncelleme: 2026-11-25 (SuperBI AutoSleep 30 dk, Faz planı backlog'a taşındı, GELISTIRME v2 kaldırıldı).

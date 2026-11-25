@@ -67,10 +67,9 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 - **Neden:** `frontend/index.html` ECharts 6.0.0'ı cdnjs'ten `integrity` özniteliği olmadan yüklüyor. CDN ele geçirilirse kötü kod çalışır.
 - **Notlar:** world.json (ECharts 4.9.0) zaten SRI ile yükleniyor (2026-11-09). ECharts 6 için aynı SRI hash'i üretilmeli; `crossorigin` özniteliği de eklenmeli.
 
-### Calc alanlarının frontend'e taşınması (hesaplanmış alan kayıt akışı)
+### Calc alanlarının frontend'e taşınması — kapandı
 - **Kategori:** teknik borç
-- **Neden:** backend `calculated_fields` alanını kalıcı tutuyor (`datasets.py`), ama frontend "Dataset Olarak Kaydet" payload'ında göndermiyor (`app.js` ~1186). Kaydedilen veri setinde hesaplanmış alanlar kayboluyor.
-- **Notlar:** `buildQueryShape()` çıktısındaki `schema_name` ve `calculated_fields` payload'a eklenmeli; güncelleme yolundaki eşitlik kontrolü (`datasets.py` ~129) ile birlikte test edilmeli. Küçük iş, ama task.md 🔜 maddesi olarak öncelikli.
+- **Durum:** `dataset_payload.js` `schema_name` ve `calculated_fields` gönderiyor (2026-11-09); test `tests/frontend/dataset_payload.test.js`.
 
 ## Teknik borç
 
@@ -89,7 +88,7 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 ## Dokümantasyon / Repo
 
 - [x] docs/ klasörü + README.md GitHub'a eklendi (tarih belirsiz; bkz. task.md ✅).
-- [ ] LICENSE dosyası eklenmedi.
+- [x] LICENSE: Apache 2.0, repoda ve README'de (2026-11-25 onaylandı).
 - [ ] README.md: NLQ, analyze, granularity, paylaşım/RLS, Doris ve test altyapısı bölümleri yok (bkz. task.md 🔜).
 
 ## Rekabet notları (referans, aksiyon değil)
@@ -117,3 +116,27 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 - **Kategori:** ürün kararı alındı
 - **Durum:** Seçenek B'nin sınırlı hali uygulandı: `use` izni + admin'in seçtiği tablo listesi, alıcı tablo seçici (PR #18, #19, #20; canlıda 2026-11-25). Tasarım: `docs/VIEWER_BAGLANTI_PAYLASIMI.md`.
 - **Kalan:** dashboard widget yolu paylaşılan bağlantıda hâlâ eski kolon ucunu kullanıyor; analiz ve "Önerilen İlişkiler" paylaşılan bağlantı için kapsam dışı.
+
+## Faz planı (GELISTIRME_GOREVLERI_v2'den taşındı, 2026-11-25)
+
+Eski v2 dosyası kaldırıldı; tek kaynak bu dosya ve `task.md`.
+
+### Faz 2 — Semantik model katmanı (başlanmadı)
+- **2.1 İlişki modeli:** granularity/FK sonuçlarından kalıcı ilişki tanımı; ilişki editörünün (4.3) veri modeli.
+- **2.2 Measure tanımları:** kayıtlı, adlandırılmış ölçüler (SBX üzerinde).
+- **2.3 CALCULATE benzeri filtre bağlamı (Kademe 2):** ölçüye filtre bağlamı uygulama.
+- **2.4 Zaman zekâsı:** önceki dönem, yıl başına kümülatif gibi hesaplar.
+- **2.5 Doğrulama:** her kademe için gerçek veriyle test (sayılar kaynak sorguyla eşleşmeli).
+
+### Faz 3 — Ölçek ve operasyon
+- **3.1 Redis (ertelendi):** çoklu worker ihtiyacı doğana kadar eklenmez (konteyner 384 MB).
+- **3.2 Zamanlanmış yenileme:** cron ifadesiyle veri seti sonucunun yenilenmesi, cache'te görünmesi.
+- **3.3 Gözlemlenebilirlik:** sorgu süresi ve hata sayısı logu; 5 saniyeyi aşan sorgular için uyarı.
+- **3.4 Yedekleme:** `scripts/backup.sh` günlük cron ile çalışıyor; haftalık geri yükleme testi ve anahtar yedeği yeri eksik.
+- **3.5 Dağıtım:** şema sürüm tablosu ve sıralı migration'lar (şu an `add_column_if_missing` ad hoc).
+
+### Faz 4 — Embedding ve kullanıcı deneyimi (başlanmadı)
+- **4.1 Embedding:** imzalı, kısa ömürlü token (`exp`, `dashboard_id`, RLS öznitelikleri); `frame-ancestors` ve CSP ile çerçeveleme kısıtı; token iptali.
+- **4.2 NLQ:** kural tabanlı iskelet var (`app/services/nlq/`); kabul: Top-N ve toplama kalıpları gerçek veriyle test edilir.
+- **4.3 İlişki editörü:** 2.1 modelinin görseli; önce 2.1.
+- **4.4 Belgeler:** README güncellemesi (task.md 🔜).

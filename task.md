@@ -20,6 +20,8 @@ Son güncelleme: 2026-11-09. Kaynak: 2026-10-24 yorum taraması, 2026-10-25 md b
 - [ ] README.md güncellemesi: NLQ motoru, analyze API, granularity, paylaşım/RLS, Doris ve test altyapısı README'de yok.
 
 ### Çalışma düzeni
+- [x] SuperBI AutoSleep eşiği 30 dk (2026-11-25, `ek_projeler.py` `zaman_asimi`); diğer siteler genel 5 dk eşiğinde kaldı.
+- [ ] Dashboard widget yolu paylaşılan bağlantıda eski kolon ucunu (`listColumns`) kullanıyor.
 - [x] `/opt/superbi` çalışma ağacı temiz; yama betikleri `scripts/archive/` altında.
 - [ ] `/root/superbi/backend/sbx/` ayrı ve eski kopya. Silme/arşiv kararı gerekli.
 - [ ] Kök dizinde 0 baytlık `superbi.db`, `pbixdb`, `odoo_test` — veri yolu karışıklığı riski (gerçek DB `data/superbi.db`).
