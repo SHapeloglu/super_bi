@@ -1,6 +1,6 @@
 # Tasarım notu: Viewer için bağlantı paylaşımı
 
-Durum: **ilk dilim uygulandı (dal `feat/viewer-connection-share`).** Karar: seçenek B'nin sınırlı hali; varsayılanlar kabul edildi (yalnız admin'in seçtiği tablolar, kullanım log'u yok, şema listesi gizli). Test: `tests/access/test_connection_share.py` (19 kontrol). İlgili backlog maddesi: "Viewer kendi veri setini kaydedemiyor" (`backlog.md`).
+Durum: **ilk dilim uygulandı (dal `feat/viewer-connection-share`).** Karar: seçenek B'nin sınırlı hali; varsayılanlar kabul edildi (yalnız admin'in seçtiği tablolar, kullanım log'u yok, şema listesi gizli). Test: `tests/access/test_connection_share.py` (24 kontrol). İlgili backlog maddesi: "Viewer kendi veri seti için bağlantı" (`backlog.md`).
 
 ## Sorun
 
@@ -46,11 +46,12 @@ Bu, A'nın güvenlik sorununu (admin kimliğiyle serbest sorgu) önler, B'nin te
 - Alıcı tablo seçici: `GET /api/connections/shared` (bağlantı + izinli tablolar) ve `GET /api/connections/shared/{conn}/tables/{table}/columns` (yalnız izinli tablo, aksi 404). Sorgu Oluşturucu'da paylaşılan bağlantıda tablo listesi izin listesinden gelir; önizleme ve doğrudan çalıştırma kapalıdır (veri seti kaydedilip Veri Setleri'nden çalıştırılır).
 - Açık kalanlar: dashboard widget yolu (paylaşılan bağlantıda hâlâ `listColumns`), "Önerilen İlişkiler" ve analiz (paylaşılan bağlantı için kapsam dışı), kullanım log'u (karar: yok), join tablolarının ana şemada varsayılması.
 
-## Açık sorular (karar gerekiyor)
+## Kararlar (2026-11-25 itibarıyla)
 
-- Viewer'a bağlantı kullanım yetkisi verilsin mi? Hangi veri setleri/tablolar görünür olsun?
-- Bağlantı kullanım denetimi (kim, hangi veri seti, ne zaman) log'lansın mı?
-- Viewer bağlantı üzerinde yalnız mevcut tabloları mı görsün, yoksa şema listesi de gösterilsin mi (bilgi sızıntısı riski)?
+- Viewer'a bağlantı kullanım yetkisi: evet, admin/sahip tek tek seçer (`use` izni).
+- Hangi tablolar: yalnız sahibin seçtiği tablolar görünür.
+- Kullanım denetimi (kim, hangi veri seti, ne zaman): log yok, karar bu yönde kaldı.
+- Şema listesi: alıcıya gösterilmez (bilgi sızıntısı riski); izinli tablolar tek liste olarak gelir.
 
 ## Test planı (kod onayından sonra; önce kırmızı)
 

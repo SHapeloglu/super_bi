@@ -52,10 +52,10 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 - **Neden:** join sorgularında GROUP BY / ORDER BY ifadelerindeki kolon adı tablo nitelemesi olmadan yazılırsa aynı adlı kolonlarda belirsizlik hatası veya yanlış tablo eşleşmesi riski var.
 - **Notlar:** `sql_builder` üretimi için tablo öneki tutarlılığı doğrulanmalı. Canlı Oracle yok; integration testi (`tests/integration/test_oracle.py`) çalıştırılmadı.
 
-### MSSQL `TrustServerCertificate=yes` (MITM)
+### MSSQL `TrustServerCertificate` (MITM) — kapandı
 - **Kategori:** güvenlik (teknik borç)
-- **Neden:** MSSQL bağlantı URL'sinde sertifika doğrulaması kapalı; ağ üzerinde ara adam saldırısı riski.
-- **Notlar:** sertifika doğrulaması açık ve CA ayarlı olmalı. Kurulum gereksinimleri (ortak DB sertifikası) belirlenince yapılacak. Kaynak: `app/core/connector_registry.py` (`TrustServerCertificate: yes`).
+- **Durum:** Varsayılan artık `no`; yalnız `DATALENS_MSSQL_TRUST_CERT=yes` ile `yes` (commit `5cbb9fc`, test `tests/security/test_mssql_cert.py`). Kaynak: `app/core/connector_registry.py`.
+- **Kalan:** Kendinden imzalı sertifikalı MSSQL bağlantıları için ortak DB sertifikası kurulumu gerekebilir.
 
 ### PyPI / npm bağımlılık sabitleme
 - **Kategori:** teknik borç
@@ -82,9 +82,9 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 - **Kategori:** teknik borç
 - **Neden:** VPS 7.8 GB RAM (kayıt 2026-09-16), swap dolu; DuckDB ingest öncesi RAM yükseltme veya ayrı VPS kararı. 2026-11-09 itibarıyla güncel değer ölçülmedi.
 
-### Undo/Redo uçtan uca testi
+### Undo/Redo uçtan uca testi — kapandı
 - **Kategori:** teknik borç
-- **Neden:** `app.js` içinde uygulandı, e2e test yok. Olay dinleyici birikmesi (Ctrl+Z) 2026-11-09 release'inde düzeltildi; test ile doğrulanmalı.
+- **Durum:** 2026-11-19 tarayıcı testi 17/17 geçti (Ctrl+Z/Ctrl+Y, ileri dal temizleme, JS hatası yok). Betik repo dışında; CI'ya eklenmedi.
 
 ## Dokümantasyon / Repo
 
@@ -113,7 +113,7 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 - **Notlar:** büyüklük, bağımlılıklar, riskler
 ```
 
-### Viewer kendi veri seti için bağlantı
-- **Kategori:** karar bekliyor (ürün)
-- **Neden:** Viewer bağlantı oluşturamadığı için kendi veri setini kaydedemez; paylaşılan veri setlerini yalnız çalıştırır.
-- **Notlar:** Seçenekler: (a) viewer'a paylaşılmış bağlantıyla kayıt; (b) bağlantı paylaşımı (`shares` tablosunu bağlantıya genişletmek). Güvenlik etkisi: bağlantı kimlik bilgisi paylaşımı; dikkatli tasarım gerekir.
+### Viewer kendi veri seti için bağlantı — uygulandı (ilk dilim)
+- **Kategori:** ürün kararı alındı
+- **Durum:** Seçenek B'nin sınırlı hali uygulandı: `use` izni + admin'in seçtiği tablo listesi, alıcı tablo seçici (PR #18, #19, #20; canlıda 2026-11-25). Tasarım: `docs/VIEWER_BAGLANTI_PAYLASIMI.md`.
+- **Kalan:** dashboard widget yolu paylaşılan bağlantıda hâlâ eski kolon ucunu kullanıyor; analiz ve "Önerilen İlişkiler" paylaşılan bağlantı için kapsam dışı.
