@@ -16,10 +16,11 @@ sqlglot==25.34.1
 # yükseltmeden önce expression_builder.py'nin güvenlik testlerini MUTLAKA
 # yeniden çalıştırın.
 
-# Aşağıdakiler LAZY driver'lardır — kurulu olmasalar da sistem sqlite ile
-# çalışır. Bir kullanıcı postgresql/mysql/mssql bağlantısı eklemeye çalışırsa
-# ConnectorRegistry.driver_installed() False döner ve /api/drivers/{db_type}/install
-# ile isteğe bağlı kurulur. İsterseniz burada da kurulu tutabilirsiniz:
-# psycopg2-binary>=2.9
-# PyMySQL>=1.1
+# Veritabanı sürücüleri üretim imajına kurulur. Eskiden yalnız çalışan konteynere
+# runtime'da (/api/drivers/{db_type}/install) kuruluyordu; konteyner yeniden
+# oluşturulunca kayboluyordu (2026-11-26 PostgreSQL bağlantı hatası).
+# Hâlâ isteğe bağlı: pyodbc (MSSQL) sistem ODBC sürücüsü gerektirir; imaja eklenmedi.
+psycopg2-binary>=2.9
+PyMySQL>=1.1
+oracledb>=2.0
 # pyodbc>=5.1

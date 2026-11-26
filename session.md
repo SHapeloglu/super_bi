@@ -183,3 +183,9 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - `superbi` konteyneri `mem_limit` 384 MB → 2 GB (compose değişikliği, PR). Sunucuda yeniden oluşturma ile uygulanacak; önce `superbi.db` yedeği.
 - DuckDB işletim kararları backlog.md'ye yazıldı: on-demand çalışma, ilk sürümde geçici mod, disk %85 eşiğinde reddetme, Docker imaj temizliği önkoşul.
 - Docker imaj temizliği (34 GB) ayrıca incelenecek; geri dönüş etiketleri korunacak.
+
+## 2026-11-26 — PostgreSQL bağlantı hatası: üretim imajında sürücü yok
+- Belirti: PostgreSQL bağlantısı eklenemiyor. Ağ sağlam (`postgres-ortak:5432` TCP başarılı), izin listesi uygun, `postgres-ortak` sağlıklı.
+- Kök neden: `psycopg2-binary`, `PyMySQL`, `oracledb` requirements.txt'te yorum satırıydı; üretim imajına girmiyordu. Sürücüler çalışan konteynere runtime'da kuruluyordu (`/api/drivers/{db_type}/install`) ve konteyner yeniden oluşturulunca kayboluyordu. 2026-11-25'teki iki yeniden oluşturma bu kayıpları tetiklemiş olabilir (eski imajların hiçbirinde de sürücü yoktu; kesin doğrulanamadı).
+- Düzeltme: sürücüler requirements.txt'e eklendi (`oracledb>=2.0`, `psycopg2-binary>=2.9`, `PyMySQL>=1.1`). pyodbc (MSSQL) sistem ODBC sürücüsü gerektirdiği için eklenmedi.
+- Test: `tests/security/test_runtime_drivers.py` önce kırmızı, sonra yeşil. Güvenlik paketi geçti.
