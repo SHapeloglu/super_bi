@@ -40,7 +40,7 @@ docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' superbi
 - SQL string'i elle yazılmaz; sqlglot AST üzerinde çalışılır.
 - `;` içeren formüller `expression_builder.py`'de reddedilir; bu davranış kaldırılmaz.
 - `.env` ve `DATALENS_DB_ENCRYPTION_KEY` değerleri md'ye ve git'e yazılmaz; yalnız değişken adı geçer.
-- Kök dizindeki `apply_*.py` / `patch_*.py` betikleri ve boş dosyalar (`odoo_test`, `pbixdb`, `superbi.db`) eski yamalardır; veri kaynağı değildir.
+- Eski yama betikleri (`apply_*.py` / `patch_*.py`) 2026-11-27'de `scripts/archive/`dan kaldırıldı (git geçmişinde). Kök dizinde veya sunucu kökünde `superbi.db` gibi boş dosya bulunmaz; gerçek DB `data/superbi.db`dir.
 - Md dosyaları Türkçe yazılır. Md seti kök dizindeki beş dosya: `architect.md`, `CLAUDE.md`, `backlog.md`, `session.md`, `task.md` (tek kaynak). Yeni açık madde `task.md` 🔜 bölümüne; planlanmamış fikir `backlog.md`ye yazılır.
 - Dokümantasyon senkron kaybı: md dosyaları koddan geride kalabiliyor (2026-09-16'da 3-4 hafta gerideydi). Her oturum sonunda md dosyalarının GERÇEKTEN sunucuya yazıldığı doğrulanır.
 

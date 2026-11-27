@@ -189,3 +189,9 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - Kök neden: `psycopg2-binary`, `PyMySQL`, `oracledb` requirements.txt'te yorum satırıydı; üretim imajına girmiyordu. Sürücüler çalışan konteynere runtime'da kuruluyordu (`/api/drivers/{db_type}/install`) ve konteyner yeniden oluşturulunca kayboluyordu. 2026-11-25'teki iki yeniden oluşturma bu kayıpları tetiklemiş olabilir (eski imajların hiçbirinde de sürücü yoktu; kesin doğrulanamadı).
 - Düzeltme: sürücüler requirements.txt'e eklendi (`oracledb>=2.0`, `psycopg2-binary>=2.9`, `PyMySQL>=1.1`). pyodbc (MSSQL) sistem ODBC sürücüsü gerektirdiği için eklenmedi.
 - Test: `tests/security/test_runtime_drivers.py` önce kırmızı, sonra yeşil. Güvenlik paketi geçti.
+
+## 2026-11-27 — Proje temizliği: çöp dosyalar ve sunucu kalıntıları
+- Repodan kaldırıldı: `frontend/OKUBENI_FRONTEND.md` (public klasörde, güncel değil, referansı yok), `scripts/archive/` (8 uygulanmış yama betiği; git geçmişinde).
+- Sunucu: kök dizindeki 0 baytlık `odoo_test`, `pbixdb`, `superbi.db` silindi; `/opt/superbi/venv` (136 MB, kullanılmıyordu) silindi; eski `superbi:pre-docs-20261119-0942` ve `superbi:pre-mssqlcert-20261119-1001` imaj etiketleri kaldırıldı. Hata: venv'i silmeden önce `superbi.service` biriminin bu venv'i kullandığı kontrol edilmedi; birim devre dışıydı, canlıya etkisi yok.
+- Kazanç küçük: repo ~112 KB, sunucu ~480 MB (venv + imaj). Disk 22 → 23 GB boş.
+- Doğrulama: `scripts/test.sh security` ve erişim testleri geçti (15 dosya).
