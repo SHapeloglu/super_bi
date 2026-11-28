@@ -844,7 +844,14 @@ function renderBuilderCard(builderCard, resultCard) {
 
   const suggestBtn = el("button", { class: "btn btn-sm", style: "margin-left:8px" }, "Önerilen İlişkiler");
   const suggestBox = el("div", { id: "qb-suggest-box", style: "margin-top:8px" });
-  suggestBtn.addEventListener("click", () => withBusy(suggestBtn, () => loadRelationshipSuggestions(suggestBox)));
+  if (!SuperBIShared.canSuggestRelationships(state.sharedConnections, state.selectedConnId)) {
+    // Paylaşılan bağlantıda analiz sonucu alıcıya ait değil; düğme pasif, neden açıklanır.
+    suggestBtn.disabled = true;
+    suggestBtn.title = "Paylaşılan bağlantıda ilişki önerisi yok (analiz sahibe ait)";
+    suggestBox.appendChild(el("p", { class: "muted small" }, "Paylaşılan bağlantıda ilişki önerisi kullanılamaz."));
+  } else {
+    suggestBtn.addEventListener("click", () => withBusy(suggestBtn, () => loadRelationshipSuggestions(suggestBox)));
+  }
   builderCard.appendChild(suggestBtn);
   builderCard.appendChild(suggestBox);
 
