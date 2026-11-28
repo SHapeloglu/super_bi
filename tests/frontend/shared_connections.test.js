@@ -52,4 +52,10 @@ check("metinden tablo bulunur; yoksa null", () => {
   assert.equal(S.findSharedTable(t, "payroll"), null);
 });
 
+check("ilişki önerisi yalnız sahibin bağlantısında açık (paylaşılanda kapalı)", () => {
+  assert.equal(S.canSuggestRelationships(shared, "c1"), true);
+  assert.equal(S.canSuggestRelationships(shared, "c9"), false);
+  assert.equal(S.canSuggestRelationships(undefined, "c1"), true);
+});
+
 console.log(`\n${passed} kontrol geçti`);

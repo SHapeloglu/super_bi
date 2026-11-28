@@ -195,3 +195,8 @@ Kayıtlar tarih sırasıyla (eskiden yeniye). Eski `docs/SESSION.md` kayıtları
 - Sunucu: kök dizindeki 0 baytlık `odoo_test`, `pbixdb`, `superbi.db` silindi; `/opt/superbi/venv` (136 MB, kullanılmıyordu) silindi; eski `superbi:pre-docs-20261119-0942` ve `superbi:pre-mssqlcert-20261119-1001` imaj etiketleri kaldırıldı. Hata: venv'i silmeden önce `superbi.service` biriminin bu venv'i kullandığı kontrol edilmedi; birim devre dışıydı, canlıya etkisi yok.
 - Kazanç küçük: repo ~112 KB, sunucu ~480 MB (venv + imaj). Disk 22 → 23 GB boş.
 - Doğrulama: `scripts/test.sh security` ve erişim testleri geçti (15 dosya).
+
+## 2026-11-28 — Paylaşılan bağlantıda "Önerilen İlişkiler" pasif
+- Backend zaten güvenli: analiz ve şema uç noktaları `_load_engine_for_owner` ile yalnız sahibe izin veriyor; alıcıya 404 dönüyor. Sorun yalnız arayüzdeydi: düğme açıktı ve tıklanınca anlamsız hata çıkıyordu.
+- Değişiklik: `canSuggestRelationships` (shared_connections.js); paylaşılan bağlantıda düğme pasif, açıklama metni gösteriliyor (app.js). Test önce yazıldı ve kırmızıyken çalıştırıldı, sonra yeşile döndü.
+- Doğrulama: tests/frontend 5 dosya geçti; app.js sözdizimi temiz. Canlı UI testi yapılmadı.

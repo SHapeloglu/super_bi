@@ -121,7 +121,7 @@ Son güncelleme: 2026-11-09. Kaynak: eski `docs/BACKLOG.md` (2026-10-25 birleşt
 ### Viewer kendi veri seti için bağlantı — uygulandı (ilk dilim)
 - **Kategori:** ürün kararı alındı
 - **Durum:** Seçenek B'nin sınırlı hali uygulandı: `use` izni + admin'in seçtiği tablo listesi, alıcı tablo seçici (PR #18, #19, #20; canlıda 2026-11-25). Tasarım: `docs/VIEWER_BAGLANTI_PAYLASIMI.md`.
-- **Kalan:** dashboard widget yolu paylaşılan bağlantıda hâlâ eski kolon ucunu kullanıyor; analiz ve "Önerilen İlişkiler" paylaşılan bağlantı için kapsam dışı.
+- **Kalan:** dashboard widget yolu paylaşılan bağlantıda hâlâ eski kolon ucunu kullanıyor; analiz paylaşılan bağlantı için kapsam dışı (sahibe ait). "Önerilen İlişkiler" paylaşılan bağlantıda pasif ve açıklamalı (2026-11-28, PR bekliyor).
 
 ## Faz planı (GELISTIRME_GOREVLERI_v2'den taşındı, 2026-11-25)
 

@@ -49,5 +49,13 @@
     return (options || []).find((o) => o.text === text) || null;
   }
 
-  return { connectionOptions, isShared, sharedTableOptions, findSharedTable };
+  /**
+   * "Önerilen İlişkiler" yalnız bağlantının sahibinde çalışır (analiz sonucu sahibe aittir;
+   * alıcıda sunucu 404 döner). Paylaşılan bağlantıda false.
+   */
+  function canSuggestRelationships(sharedConns, connId) {
+    return !isShared(sharedConns, connId);
+  }
+
+  return { connectionOptions, isShared, sharedTableOptions, findSharedTable, canSuggestRelationships };
 });
